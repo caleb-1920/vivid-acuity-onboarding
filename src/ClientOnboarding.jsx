@@ -1214,7 +1214,7 @@ function StepPayment({ signedData, onPaid }) {
 
         {/* Retainer - collapsed display with edit toggle */}
         {(() => {
-          const [editing, setEditing] = React.useState(false);
+          
           const retainerLabel = retainer === 'monthly' ? 'Monthly - $30/mo' : retainer === 'annual' ? 'Annual - $300/yr' : 'No Maintenance';
           return (
             <div style={{marginBottom:'8px'}}>
