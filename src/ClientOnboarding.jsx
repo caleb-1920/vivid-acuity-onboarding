@@ -1224,7 +1224,7 @@ function StepPayment({ signedData, onPaid }) {
                     <div style={{fontFamily:'Oswald, sans-serif', fontSize:'11px', letterSpacing:'0.2em', textTransform:'uppercase', color:'var(--muted)', marginBottom:'4px'}}>Maintenance Plan</div>
                     <div style={{fontFamily:'Oswald, sans-serif', fontSize:'16px', fontWeight:'500', color:'var(--cream)'}}>{retainerLabel}</div>
                   </div>
-                  <button onClick={() => setEditing(true)} style={{background:'none', border:'1px solid rgba(168,124,79,0.4)', borderRadius:'6px', color:'var(--tan-light)', fontFamily:'Oswald, sans-serif', fontSize:'11px', letterSpacing:'0.15em', textTransform:'uppercase', padding:'6px 14px', cursor:'pointer'}}>
+                  <button onClick={() => setEditingRetainer(true)} style={{background:'none', border:'1px solid rgba(168,124,79,0.4)', borderRadius:'6px', color:'var(--tan-light)', fontFamily:'Oswald, sans-serif', fontSize:'11px', letterSpacing:'0.15em', textTransform:'uppercase', padding:'6px 14px', cursor:'pointer'}}>
                     Edit
                   </button>
                 </div>
@@ -1274,7 +1274,7 @@ function StepPayment({ signedData, onPaid }) {
                     </div>
                   </div>
 
-                  <button onClick={() => setEditing(false)} style={{
+                  <button onClick={() => setEditingRetainer(false)} style={{
                     background:'linear-gradient(135deg, var(--orange), var(--orange2))',
                     border:'none', borderRadius:'8px', color:'#fff',
                     fontFamily:'Oswald, sans-serif', fontSize:'13px',
