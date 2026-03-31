@@ -126,6 +126,25 @@ body {
   max-width: 400px;
 }
 
+.logo-wrap {
+  width: 100%;
+  max-width: 400px;
+  min-height: 110px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.logo-wordmark {
+  font-family: 'Oswald', sans-serif;
+  font-size: 34px;
+  font-weight: 700;
+  color: var(--cream);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
 .header-divider {
   width: 48px;
   height: 2px;
@@ -134,15 +153,17 @@ body {
 
 .client-tag {
   font-family: 'Oswald', sans-serif;
-  font-size: 15px;
+  font-size: 20px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text);
+  line-height: 1.35;
 }
 
 .client-tag span {
   color: #ffffff;
-  font-weight: 600;
+  font-weight: 700;
+  font-size: 24px;
 }
 
 /* ── Section headings ── */
@@ -167,7 +188,7 @@ body {
 
 .section-lead {
   font-size: 15px;
-  color: var(--muted);
+  color: var(--text);
   line-height: 1.7;
   margin-bottom: 32px;
   max-width: 560px;
@@ -235,6 +256,22 @@ body {
   height: 6px;
   border-radius: 50%;
   background: var(--tan);
+}
+
+.guarantee-card {
+  border-color: rgba(58,182,211,0.35);
+  background: #0d2f38;
+  box-shadow: 0 0 32px rgba(58,182,211,0.12);
+}
+
+.guarantee-title,
+.guarantee-copy {
+  color: #ffffff;
+}
+
+.guarantee-copy {
+  font-size: 15px;
+  line-height: 1.75;
 }
 
 /* ── Pricing table ── */
@@ -374,7 +411,7 @@ body {
 
 .contract-section p {
   font-size: 13px;
-  color: var(--muted);
+  color: var(--text);
   line-height: 1.75;
 }
 
@@ -446,49 +483,237 @@ body {
 .sig-name-input::placeholder { color: var(--muted); }
 
 /* ── Payment ── */
-.payment-amount {
-  text-align: center;
-  padding: 40px 0 32px;
+.plan-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.payment-amount-label {
+.plan-option {
+  width: 100%;
+  background: var(--bg3);
+  border: 2px solid rgba(168,124,79,0.2);
+  border-radius: 14px;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: inherit;
+  text-align: left;
+}
+
+.plan-option:hover { border-color: var(--tan); }
+
+.plan-option.selected {
+  border-color: var(--orange);
+  background: rgba(235,102,17,0.08);
+}
+
+.plan-option-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.plan-radio {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid rgba(168,124,79,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.plan-option.selected .plan-radio { border-color: var(--orange); }
+
+.plan-radio-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--orange);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.plan-radio-dot.visible { opacity: 1; }
+
+.plan-option-title {
+  font-family: 'Oswald', sans-serif;
+  font-size: 15px;
+  color: var(--cream);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.plan-option-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.plan-option-price {
+  font-family: 'Oswald', sans-serif;
+  font-size: 20px;
+  color: var(--tan-light);
+  flex-shrink: 0;
+}
+
+.plan-badge {
+  font-size: 11px;
+  background: rgba(235,102,17,0.15);
+  color: var(--orange);
+  padding: 2px 8px;
+  border-radius: 999px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.plan-summary {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: rgba(168,124,79,0.08);
+}
+
+.plan-summary-label {
   font-family: 'Oswald', sans-serif;
   font-size: 11px;
-  letter-spacing: 0.25em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--muted);
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
-.payment-amount-value {
-  font-family: 'Oswald', sans-serif;
-  font-size: 64px;
-  font-weight: 600;
-  color: var(--cream);
-  line-height: 1;
-  letter-spacing: -0.02em;
+.plan-summary-value {
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.65;
 }
 
-.payment-amount-value span {
-  font-size: 28px;
-  color: var(--tan);
-  vertical-align: super;
-  margin-right: 4px;
-}
-
-.payment-desc {
-  font-size: 13px;
-  color: var(--muted);
-  margin-top: 8px;
-}
-
-.stripe-placeholder {
+.summary-shell {
   background: var(--bg2);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 28px 32px;
-  margin-bottom: 16px;
+  border-radius: 18px;
+  padding: 24px;
+  margin-bottom: 20px;
 }
+
+.summary-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.summary-eyebrow {
+  font-family: 'Oswald', sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.summary-title {
+  font-family: 'Oswald', sans-serif;
+  font-size: 22px;
+  color: var(--cream);
+}
+
+.summary-edit-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-family: 'Oswald', sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 10px 16px;
+  cursor: pointer;
+}
+
+.summary-editor { margin-bottom: 18px; }
+
+.line-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+  padding: 14px 0;
+  border-top: 1px solid rgba(168,124,79,0.12);
+}
+
+.line-item-title {
+  font-family: 'Oswald', sans-serif;
+  font-size: 15px;
+  color: var(--cream);
+}
+
+.line-item-copy {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+  line-height: 1.6;
+}
+
+.line-item-amount {
+  font-family: 'Oswald', sans-serif;
+  font-size: 24px;
+  color: var(--tan-light);
+  flex-shrink: 0;
+}
+
+.muted-line .line-item-amount,
+.muted-amount {
+  color: var(--muted);
+}
+
+.due-today-card {
+  background: rgba(168,124,79,0.08);
+  border-radius: 12px;
+  padding: 16px;
+  margin-top: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.due-today-label {
+  font-family: 'Oswald', sans-serif;
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--tan);
+}
+
+.due-today-amount {
+  font-family: 'Oswald', sans-serif;
+  font-size: 30px;
+  color: var(--cream);
+}
+
+.payment-note {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 10px;
+  line-height: 1.7;
+}
+
+.payment-error {
+  color: #ff7b7b;
+  font-size: 13px;
+  margin: 8px 0 16px;
+}
+
+.center-error { text-align: center; }
 
 .stripe-note {
   font-family: 'Oswald', sans-serif;
@@ -502,29 +727,6 @@ body {
   align-items: center;
   justify-content: center;
   gap: 6px;
-}
-
-.stripe-field {
-  width: 100%;
-  background: var(--bg3);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--cream);
-  font-family: 'Lora', serif;
-  font-size: 15px;
-  padding: 13px 16px;
-  margin-bottom: 12px;
-  outline: none;
-  transition: border-color 0.2s;
-}
-
-.stripe-field:focus { border-color: var(--tan); }
-.stripe-field::placeholder { color: var(--muted); }
-
-.stripe-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
 }
 
 /* ── Thank you ── */
@@ -570,6 +772,11 @@ body {
   border: 1px solid rgba(58,182,211,0.2);
   border-radius: 4px;
   padding: 10px 20px;
+}
+
+.thankyou-button {
+  max-width: 320px;
+  margin: 20px auto 0;
 }
 
 /* ── Accepted badge ── */
@@ -664,9 +871,15 @@ body {
 .mt-32 { margin-top: 32px; }
 
 @media (max-width: 600px) {
-  .retainer-options { grid-template-columns: 1fr; }
-  .stripe-row { grid-template-columns: 1fr; }
   .section-title { font-size: 26px; }
-  .payment-amount-value { font-size: 48px; }
   .step-label { display: none; }
+  .client-tag { font-size: 16px; }
+  .client-tag span { font-size: 18px; }
+  .summary-header-row,
+  .plan-option,
+  .due-today-card,
+  .line-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }

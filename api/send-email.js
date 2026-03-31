@@ -4,19 +4,154 @@ const VALID_RETAINERS = new Set(['none', 'monthly', 'annual'])
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (char) => {
-    const entities = {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#39;',
-    }
+    const entities = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
     return entities[char]
   })
 }
 
-function isValidDataUrl(str) {
-  return typeof str === 'string' && str.startsWith('data:image/png;base64,') && str.length < 500000
+function extractBase64(dataUrl) {
+  if (typeof dataUrl !== 'string') return null
+  const match = dataUrl.match(/^data:image\/png;base64,(.+)$/)
+  return match ? match[1] : null
+}
+
+function buildSigHtml(cidName) {
+  if (cidName) {
+    return `<img src="cid:${cidName}" style="max-width:320px;height:80px;display:block;margin:8px 0;object-fit:contain;" />
+      <div style="border-bottom:1.5px solid #1a1a1a;margin-bottom:4px;"></div>`
+  }
+  return '<div style="border-bottom:1.5px solid #1a1a1a;height:40px;margin:8px 0 4px;"></div>'
+}
+
+const S = {
+  body: 'font-family:Georgia,serif;max-width:700px;margin:0 auto;background:#ffffff;color:#1a1a1a;padding:48px;',
+  coName: 'font-family:sans-serif;font-size:11px;letter-spacing:0.25em;text-transform:uppercase;color:#eb6611;margin-bottom:6px;',
+  h1: 'font-family:sans-serif;font-size:22px;color:#1a1a1a;margin:0 0 4px;',
+  subtitle: 'font-size:12px;color:#7a7060;margin-bottom:28px;',
+  sectionTitle: 'font-family:sans-serif;font-size:13px;font-weight:700;color:#A87C4F;text-transform:uppercase;letter-spacing:0.15em;margin:24px 0 12px;padding-bottom:6px;border-bottom:1px solid rgba(168,124,79,0.25);',
+  row: 'display:flex;padding:6px 0;border-bottom:1px solid #f0f0f0;',
+  label: 'width:200px;font-size:13px;color:#7a7060;flex-shrink:0;',
+  value: 'font-size:14px;font-weight:600;color:#1a1a1a;',
+  signed: 'font-size:14px;font-weight:600;color:#2a7a5a;',
+  price: 'font-family:sans-serif;font-size:18px;font-weight:700;color:#A87C4F;',
+  cardTitle: 'font-family:sans-serif;font-size:15px;font-weight:600;color:#1a1a1a;margin:18px 0 6px;',
+  cardItem: 'font-size:13px;color:#444;line-height:1.7;padding:3px 0 3px 16px;',
+  dot: 'display:inline-block;width:6px;height:6px;border-radius:50%;background:#A87C4F;margin-right:8px;vertical-align:middle;',
+  guarantee: 'background:#f0faf5;border:1px solid #c8e6c9;border-radius:6px;padding:14px;margin:14px 0;font-size:13px;',
+  clauseTitle: 'font-family:sans-serif;font-size:12px;font-weight:600;color:#A87C4F;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;padding-bottom:4px;border-bottom:1px solid rgba(168,124,79,0.15);',
+  clauseText: 'font-size:12px;color:#555;line-height:1.75;margin:0;',
+  sigBlock: 'margin-top:28px;padding-top:16px;border-top:1px solid #eee;',
+  sigLabel: 'font-family:sans-serif;font-size:11px;color:#A87C4F;text-transform:uppercase;letter-spacing:0.15em;margin-bottom:4px;',
+  sigName: 'font-family:sans-serif;font-size:12px;color:#1a1a1a;font-weight:600;',
+  sigDate: 'font-size:11px;color:#999;margin-top:2px;',
+}
+
+function buildProposalHtml({ safeClientName, safeProposalSignedAt, now, proposalSigCid }) {
+  const sigHtml = buildSigHtml(proposalSigCid)
+  return `<div style="${S.body}">
+  <div style="${S.coName}">Vivid Acuity, LLC</div>
+  <h1 style="${S.h1}">Project Proposal</h1>
+  <div style="${S.subtitle}">Prepared for ${safeClientName} / Top View Taxidermy &mdash; ${now}</div>
+
+  <div style="${S.row}"><div style="${S.label}">Client</div><div style="${S.value}">${safeClientName}</div></div>
+  <div style="${S.row}"><div style="${S.label}">Business</div><div style="${S.value}">Top View Taxidermy, Kenosha WI</div></div>
+  <div style="${S.row}"><div style="${S.label}">Proposal Signed</div><div style="${S.signed}">&#10003; ${safeProposalSignedAt}</div></div>
+
+  <div style="${S.sectionTitle}">Deliverables</div>
+
+  <div style="${S.cardTitle}">&#127912; Custom Logo Design</div>
+  <div style="${S.cardItem}"><span style="${S.dot}"></span>A brand new logo designed from scratch for Top View Taxidermy.</div>
+  <div style="${S.cardItem}"><span style="${S.dot}"></span>Built to reflect the craft and legacy behind the business.</div>
+  <div style="${S.cardItem}"><span style="${S.dot}"></span>Delivered in every file format needed for web, print, hats, shirts, and more.</div>
+
+  <div style="${S.cardTitle}">&#128187; Website Design and Development</div>
+  <div style="${S.cardItem}"><span style="${S.dot}"></span>A fully custom website built from the ground up with no templates.</div>
+  <div style="${S.cardItem}"><span style="${S.dot}"></span>Responsive across phones, tablets, and desktops.</div>
+  <div style="${S.cardItem}"><span style="${S.dot}"></span>Dark, sharp design with a color palette that fits the brand.</div>
+  <div style="${S.cardItem}"><span style="${S.dot}"></span>Fast-loading and professional throughout.</div>
+
+  <div style="${S.cardTitle}">&#128248; Photo Gallery</div>
+  <div style="${S.cardItem}"><span style="${S.dot}"></span>Photos organized by mount type so visitors can find what they want quickly.</div>
+  <div style="${S.cardItem}"><span style="${S.dot}"></span>Click any photo to open it full screen.</div>
+  <div style="${S.cardItem}"><span style="${S.dot}"></span>All photos professionally edited and color-corrected before going live.</div>
+
+  <div style="${S.cardTitle}">&#128269; Search Engine Setup</div>
+  <div style="${S.cardItem}"><span style="${S.dot}"></span>Built so Google can find it when people search for a taxidermist in Kenosha.</div>
+  <div style="${S.cardItem}"><span style="${S.dot}"></span>Displays correctly on every phone with no awkward zooming.</div>
+
+  <div style="${S.cardTitle}">&#128640; Live on the Web</div>
+  <div style="${S.cardItem}"><span style="${S.dot}"></span>Loads fast so nobody waits.</div>
+  <div style="${S.cardItem}"><span style="${S.dot}"></span>Hosted on a reliable platform that stays online.</div>
+  <div style="${S.cardItem}"><span style="${S.dot}"></span>Delivered clean with no bugs and ready for real visitors from day one.</div>
+
+  <div style="${S.sectionTitle}">Investment</div>
+  <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
+    <tr><td style="padding:8px 0;font-size:14px;border-bottom:1px solid #f0f0f0;">Setup Fee</td><td style="padding:8px 0;text-align:right;font-family:sans-serif;font-weight:500;color:#A87C4F;border-bottom:1px solid #f0f0f0;">$100</td></tr>
+    <tr><td style="padding:8px 0;font-size:14px;border-bottom:1px solid #f0f0f0;">Custom Logo Design</td><td style="padding:8px 0;text-align:right;font-family:sans-serif;font-weight:500;color:#A87C4F;border-bottom:1px solid #f0f0f0;">$150</td></tr>
+    <tr><td style="padding:8px 0;font-size:14px;border-bottom:1px solid #f0f0f0;">Website Design and Development</td><td style="padding:8px 0;text-align:right;font-family:sans-serif;font-weight:500;color:#A87C4F;border-bottom:1px solid #f0f0f0;">$250</td></tr>
+    <tr style="background:rgba(168,124,79,0.08);"><td style="padding:10px 0;font-size:15px;font-weight:700;"><strong>One-Time Total</strong></td><td style="padding:10px 0;text-align:right;font-family:sans-serif;font-size:18px;font-weight:700;color:#A87C4F;"><strong>$500</strong></td></tr>
+  </table>
+
+  <div style="${S.guarantee}"><strong style="color:#2a7a5a;">100% Satisfaction Guarantee:</strong> If the client is not fully satisfied with the completed website and logo within 3 months of launch, Vivid Acuity, LLC will issue a full refund of all fees paid. This guarantee is void if the client has materially altered the delivered work.</div>
+
+  <div style="${S.sigBlock}">
+    <div style="${S.sigLabel}">Client Signature</div>
+    ${sigHtml}
+    <div style="${S.sigName}">${safeClientName}</div>
+    <div style="${S.sigDate}">Signed ${safeProposalSignedAt}</div>
+  </div>
+
+  <div style="${S.sigBlock}">
+    <div style="${S.sigLabel}">Vivid Acuity, LLC</div>
+    <div style="border-bottom:1.5px solid #1a1a1a;height:40px;margin:8px 0 4px;"></div>
+    <div style="${S.sigName}">Caleb Hingos &mdash; Vivid Acuity, LLC</div>
+    <div style="${S.sigDate}">${now}</div>
+  </div>
+</div>`
+}
+
+function buildAgreementHtml({ safeClientName, safeContractSignedAt, retainerLabel, formattedPaymentAmount, effectiveDate, now, contractSigCid }) {
+  const sigHtml = buildSigHtml(contractSigCid)
+  return `<div style="${S.body}">
+  <div style="${S.coName}">Vivid Acuity, LLC</div>
+  <h1 style="${S.h1}">Service Agreement</h1>
+  <div style="${S.subtitle}">Top View Taxidermy &mdash; ${safeClientName} &mdash; ${now}</div>
+
+  <div style="${S.row}"><div style="${S.label}">Agreement Signed</div><div style="${S.signed}">&#10003; ${safeContractSignedAt}</div></div>
+  <div style="${S.row}"><div style="${S.label}">Effective Date</div><div style="${S.value}">${effectiveDate}</div></div>
+  <div style="${S.row}"><div style="${S.label}">Retainer Selected</div><div style="${S.value}">${retainerLabel}</div></div>
+  <div style="${S.row}"><div style="${S.label}">Payment</div><div style="${S.price}">${formattedPaymentAmount}</div></div>
+  <div style="${S.row}"><div style="${S.label}">Governing Law</div><div style="${S.value}">State of Michigan</div></div>
+
+  <div style="${S.sectionTitle}">Agreement Terms</div>
+  <div style="background:#fafafa;border:1px solid #eee;border-radius:6px;padding:24px;margin-bottom:16px;">
+    <div style="margin-bottom:14px;"><div style="${S.clauseTitle}">1. Parties</div><p style="${S.clauseText}">This Service Agreement is entered into between Caleb Hingos, operating as Vivid Acuity, LLC (caleb@vividacuity.com), Upper Peninsula, Michigan, and Craig Reindl, operating as Top View Taxidermy, Kenosha, Wisconsin.</p></div>
+    <div style="margin-bottom:14px;"><div style="${S.clauseTitle}">2. Scope of Work</div><p style="${S.clauseText}">Vivid Acuity, LLC has completed a custom logo and a fully custom website including responsive design, edited gallery assets, search engine setup, and live deployment.</p></div>
+    <div style="margin-bottom:14px;"><div style="${S.clauseTitle}">3. Project Fees</div><p style="${S.clauseText}">Setup Fee: $100. Custom Logo Design: $150. Website Design and Development: $250. One-time project total: $500, due upon signing this agreement.</p></div>
+    <div style="margin-bottom:14px;"><div style="${S.clauseTitle}">4. Ongoing Maintenance</div><p style="${S.clauseText}">Optional maintenance may be selected as either $30/month or $300/year. Coverage includes hosting oversight, uptime monitoring, minor content updates, and dependency maintenance.</p></div>
+    <div style="margin-bottom:14px;"><div style="${S.clauseTitle}">5. Payment Terms</div><p style="${S.clauseText}">Full one-time balance is due upon signing. Monthly maintenance begins May 1, 2026 if selected. Annual maintenance covers May 1, 2026 through May 1, 2027 if selected.</p></div>
+    <div style="margin-bottom:14px;"><div style="${S.clauseTitle}">6. Intellectual Property</div><p style="${S.clauseText}">Upon receipt of full payment, all rights to the logo and website transfer fully to Craig Reindl / Top View Taxidermy. Vivid Acuity may still display the work in its portfolio.</p></div>
+    <div style="margin-bottom:14px;"><div style="${S.clauseTitle}">7. Revisions</div><p style="${S.clauseText}">Up to two rounds of revisions are included. Additional revisions are billed at $75/hour and must be requested in writing.</p></div>
+    <div style="margin-bottom:14px;"><div style="${S.clauseTitle}">8. Satisfaction Guarantee</div><p style="${S.clauseText}">If the client is not fully satisfied with the completed website and logo within 3 months of launch, Vivid Acuity, LLC will issue a full refund of all fees paid.</p></div>
+    <div style="margin-bottom:14px;"><div style="${S.clauseTitle}">9. Limitation of Liability</div><p style="${S.clauseText}">Total liability of Vivid Acuity, LLC is limited to the total fees paid under this agreement.</p></div>
+    <div style="margin-bottom:14px;"><div style="${S.clauseTitle}">10. Governing Law</div><p style="${S.clauseText}">This agreement is governed by the laws of the State of Michigan.</p></div>
+    <div><div style="${S.clauseTitle}">Effective Date</div><p style="${S.clauseText}">${effectiveDate}</p></div>
+  </div>
+
+  <div style="${S.sigBlock}">
+    <div style="${S.sigLabel}">Client Signature</div>
+    ${sigHtml}
+    <div style="${S.sigName}">${safeClientName} &mdash; Top View Taxidermy</div>
+    <div style="${S.sigDate}">Signed ${safeContractSignedAt}</div>
+  </div>
+
+  <div style="${S.sigBlock}">
+    <div style="${S.sigLabel}">Vivid Acuity, LLC</div>
+    <div style="border-bottom:1.5px solid #1a1a1a;height:40px;margin:8px 0 4px;"></div>
+    <div style="${S.sigName}">Caleb Hingos &mdash; Vivid Acuity, LLC</div>
+    <div style="${S.sigDate}">${now}</div>
+  </div>
+</div>`
 }
 
 export default async function handler(req, res) {
@@ -24,23 +159,10 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const {
-    clientName,
-    retainer,
-    proposalSignedAt,
-    contractSignedAt,
-    paymentAmount,
-    proposalSigImage,
-    contractSigImage,
-  } = req.body;
+  const { clientName, retainer, proposalSignedAt, contractSignedAt, paymentAmount, proposalSigImage, contractSigImage } = req.body;
 
   const resendApiKey = process.env.RESEND_API_KEY;
   const normalizedClientName = typeof clientName === 'string' ? clientName.trim() : '';
@@ -48,192 +170,90 @@ export default async function handler(req, res) {
   const normalizedContractSignedAt = typeof contractSignedAt === 'string' ? contractSignedAt.trim() : '';
   const numericPaymentAmount = Number(paymentAmount);
 
-  if (!resendApiKey) {
-    return res.status(500).json({ error: 'Server email configuration is missing.' });
-  }
-
-  if (!normalizedClientName) {
-    return res.status(400).json({ error: 'Client name is required.' });
-  }
-
-  if (!VALID_RETAINERS.has(retainer)) {
-    return res.status(400).json({ error: 'A valid retainer plan is required.' });
-  }
-
-  if (!normalizedProposalSignedAt || !normalizedContractSignedAt) {
-    return res.status(400).json({ error: 'Proposal and agreement signatures are required.' });
-  }
-
-  if (!Number.isFinite(numericPaymentAmount) || numericPaymentAmount <= 0) {
-    return res.status(400).json({ error: 'Payment amount must be greater than 0.' });
-  }
+  if (!resendApiKey) return res.status(500).json({ error: 'Server email configuration is missing.' });
+  if (!normalizedClientName) return res.status(400).json({ error: 'Client name is required.' });
+  if (!VALID_RETAINERS.has(retainer)) return res.status(400).json({ error: 'A valid retainer plan is required.' });
+  if (!normalizedProposalSignedAt || !normalizedContractSignedAt) return res.status(400).json({ error: 'Proposal and agreement signatures are required.' });
+  if (!Number.isFinite(numericPaymentAmount) || numericPaymentAmount <= 0) return res.status(400).json({ error: 'Payment amount must be greater than 0.' });
 
   const retainerLabel = retainer === 'monthly' ? '$30/month' : retainer === 'annual' ? '$300/year' : 'None selected';
   const now = new Date().toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' });
   const effectiveDate = new Date().toLocaleDateString('en-US', { dateStyle: 'long' });
-  const formattedPaymentAmount = new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-  }).format(numericPaymentAmount);
+  const formattedPaymentAmount = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(numericPaymentAmount);
+  const safeClientName = escapeHtml(normalizedClientName);
+  const safeProposalSignedAt = escapeHtml(normalizedProposalSignedAt);
+  const safeContractSignedAt = escapeHtml(normalizedContractSignedAt);
 
-  const safe = escapeHtml;
-  const safeClientName = safe(normalizedClientName);
-  const safeProposalSignedAt = safe(normalizedProposalSignedAt);
-  const safeContractSignedAt = safe(normalizedContractSignedAt);
+  const proposalSigBase64 = extractBase64(proposalSigImage);
+  const contractSigBase64 = extractBase64(contractSigImage);
 
-  const proposalSigHtml = isValidDataUrl(proposalSigImage)
-    ? `<img src="${proposalSigImage}" style="max-width:300px;height:60px;display:block;margin:8px 0;" alt="Proposal Signature" />`
-    : '<div style="height:40px;border-bottom:1.5px solid #1a1a1a;margin:8px 0;"></div>';
-
-  const contractSigHtml = isValidDataUrl(contractSigImage)
-    ? `<img src="${contractSigImage}" style="max-width:300px;height:60px;display:block;margin:8px 0;" alt="Contract Signature" />`
-    : '<div style="height:40px;border-bottom:1.5px solid #1a1a1a;margin:8px 0;"></div>';
-
-  const s = {
-    body: 'font-family:Georgia,serif;max-width:700px;margin:0 auto;background:#ffffff;color:#1a1a1a;padding:48px;',
-    coName: 'font-family:sans-serif;font-size:11px;letter-spacing:0.25em;text-transform:uppercase;color:#eb6611;margin-bottom:8px;',
-    h1: 'font-family:sans-serif;font-size:24px;color:#1a1a1a;margin:0 0 4px;',
-    subtitle: 'font-size:13px;color:#7a7060;margin-bottom:32px;',
-    sectionTitle: 'font-family:sans-serif;font-size:13px;font-weight:700;color:#A87C4F;text-transform:uppercase;letter-spacing:0.15em;margin:32px 0 12px;padding-bottom:6px;border-bottom:1px solid rgba(168,124,79,0.25);',
-    row: 'display:flex;padding:8px 0;border-bottom:1px solid #f0f0f0;',
-    label: 'width:200px;font-size:13px;color:#7a7060;flex-shrink:0;',
-    value: 'font-size:14px;font-weight:600;color:#1a1a1a;',
-    signed: 'font-size:14px;font-weight:600;color:#2a7a5a;',
-    price: 'font-family:sans-serif;font-size:18px;font-weight:700;color:#A87C4F;',
-    cardTitle: 'font-family:sans-serif;font-size:16px;font-weight:600;color:#1a1a1a;margin:20px 0 10px;',
-    cardItem: 'font-size:13px;color:#444;line-height:1.7;padding:4px 0 4px 16px;position:relative;',
-    dot: 'display:inline-block;width:6px;height:6px;border-radius:50%;background:#A87C4F;margin-right:8px;vertical-align:middle;',
-    guarantee: 'background:#f0faf5;border:1px solid #c8e6c9;border-radius:6px;padding:16px;margin:16px 0;',
-    contractSection: 'margin-bottom:16px;',
-    contractTitle: 'font-family:sans-serif;font-size:12px;font-weight:600;color:#A87C4F;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:4px;padding-bottom:4px;border-bottom:1px solid rgba(168,124,79,0.15);',
-    contractText: 'font-size:12px;color:#666;line-height:1.75;margin:0;',
-    sigBlock: 'margin-top:32px;padding-top:20px;border-top:1px solid #eee;',
-    sigLabel: 'font-family:sans-serif;font-size:11px;color:#A87C4F;text-transform:uppercase;letter-spacing:0.15em;margin-bottom:4px;',
-    sigName: 'font-family:sans-serif;font-size:12px;color:#1a1a1a;font-weight:600;',
-    sigDate: 'font-size:11px;color:#999;margin-top:2px;',
+  // Build Email 1: Signed Proposal
+  const proposalAttachments = [];
+  const proposalSigCid = proposalSigBase64 ? 'proposal-signature' : null;
+  if (proposalSigBase64) {
+    proposalAttachments.push({
+      filename: 'proposal-signature.png',
+      content: proposalSigBase64,
+      content_type: 'image/png',
+      disposition: 'inline',
+      content_id: 'proposal-signature',
+    });
   }
+  const proposalHtml = buildProposalHtml({ safeClientName, safeProposalSignedAt, now, proposalSigCid });
 
-  const html = `
-<div style="${s.body}">
-  <div style="${s.coName}">Vivid Acuity, LLC</div>
-  <h1 style="${s.h1}">Signed Client Documents</h1>
-  <div style="${s.subtitle}">Top View Taxidermy &middot; ${safeClientName} &middot; ${now}</div>
-
-  <!-- ═══════════════ PROPOSAL ═══════════════ -->
-  <div style="${s.sectionTitle}">Proposal - Accepted and Signed</div>
-
-  <div style="${s.row}"><div style="${s.label}">Client</div><div style="${s.value}">${safeClientName}</div></div>
-  <div style="${s.row}"><div style="${s.label}">Business</div><div style="${s.value}">Top View Taxidermy, Kenosha WI</div></div>
-  <div style="${s.row}"><div style="${s.label}">Proposal Signed</div><div style="${s.signed}">&#10003; ${safeProposalSignedAt}</div></div>
-
-  <div style="${s.cardTitle}">&#127912; Custom Logo Design</div>
-  <div style="${s.cardItem}"><span style="${s.dot}"></span>A brand new logo designed from scratch for Top View Taxidermy</div>
-  <div style="${s.cardItem}"><span style="${s.dot}"></span>Built to reflect the craft and legacy behind your business</div>
-  <div style="${s.cardItem}"><span style="${s.dot}"></span>Delivered in every file format you need - web, print, hats, shirts, and more</div>
-
-  <div style="${s.cardTitle}">&#128187; Website Design and Development</div>
-  <div style="${s.cardItem}"><span style="${s.dot}"></span>A fully custom website built from the ground up - no templates, no shortcuts</div>
-  <div style="${s.cardItem}"><span style="${s.dot}"></span>Looks great on phones, tablets, and desktops</div>
-  <div style="${s.cardItem}"><span style="${s.dot}"></span>Dark, sharp design with a color palette that fits your brand</div>
-  <div style="${s.cardItem}"><span style="${s.dot}"></span>Fast-loading and professional throughout</div>
-
-  <div style="${s.cardTitle}">&#128248; Photo Gallery</div>
-  <div style="${s.cardItem}"><span style="${s.dot}"></span>Photos organized by mount type so visitors find exactly what they are looking for</div>
-  <div style="${s.cardItem}"><span style="${s.dot}"></span>Click any photo to open it full screen</div>
-  <div style="${s.cardItem}"><span style="${s.dot}"></span>All photos professionally edited and color-corrected before going live</div>
-
-  <div style="${s.cardTitle}">&#128269; Search Engine Setup</div>
-  <div style="${s.cardItem}"><span style="${s.dot}"></span>Built so Google can find it - people searching for a taxidermist in Kenosha will find you</div>
-  <div style="${s.cardItem}"><span style="${s.dot}"></span>Displays correctly on every phone with no awkward zooming</div>
-
-  <div style="${s.cardTitle}">&#128640; Live on the Web</div>
-  <div style="${s.cardItem}"><span style="${s.dot}"></span>Loads fast - nobody waits</div>
-  <div style="${s.cardItem}"><span style="${s.dot}"></span>Hosted on a reliable platform that stays online</div>
-  <div style="${s.cardItem}"><span style="${s.dot}"></span>Delivered clean with no bugs, ready for real visitors from day one</div>
-
-  <div style="${s.sectionTitle}">Investment</div>
-  <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
-    <tr><td style="padding:8px 0;font-size:14px;color:#1a1a1a;border-bottom:1px solid #f0f0f0;">Setup Fee</td><td style="padding:8px 0;text-align:right;font-family:sans-serif;font-weight:500;color:#A87C4F;border-bottom:1px solid #f0f0f0;">$100</td></tr>
-    <tr><td style="padding:8px 0;font-size:14px;color:#1a1a1a;border-bottom:1px solid #f0f0f0;">Custom Logo Design</td><td style="padding:8px 0;text-align:right;font-family:sans-serif;font-weight:500;color:#A87C4F;border-bottom:1px solid #f0f0f0;">$150</td></tr>
-    <tr><td style="padding:8px 0;font-size:14px;color:#1a1a1a;border-bottom:1px solid #f0f0f0;">Website Design and Development</td><td style="padding:8px 0;text-align:right;font-family:sans-serif;font-weight:500;color:#A87C4F;border-bottom:1px solid #f0f0f0;">$250</td></tr>
-    <tr style="background:rgba(168,124,79,0.08);"><td style="padding:10px 0;font-size:15px;font-weight:700;color:#1a1a1a;"><strong>One-Time Total</strong></td><td style="padding:10px 0;text-align:right;font-family:sans-serif;font-size:18px;font-weight:700;color:#A87C4F;"><strong>$500</strong></td></tr>
-  </table>
-
-  <div style="${s.guarantee}"><strong style="color:#2a7a5a;">100% Satisfaction Guarantee:</strong> If the client is not fully satisfied with the completed website and logo within 3 months of launch, Vivid Acuity, LLC will issue a full refund of all fees paid. This guarantee is void if the client has materially altered the delivered work.</div>
-
-  <div style="${s.sigBlock}">
-    <div style="${s.sigLabel}">Client Signature - Proposal</div>
-    ${proposalSigHtml}
-    <div style="${s.sigName}">${safeClientName}</div>
-    <div style="${s.sigDate}">Signed ${safeProposalSignedAt}</div>
-  </div>
-
-  <!-- ═══════════════ SERVICE AGREEMENT ═══════════════ -->
-  <div style="${s.sectionTitle}">Service Agreement - Signed</div>
-
-  <div style="${s.row}"><div style="${s.label}">Agreement Signed</div><div style="${s.signed}">&#10003; ${safeContractSignedAt}</div></div>
-  <div style="${s.row}"><div style="${s.label}">Effective Date</div><div style="${s.value}">March 31, 2025</div></div>
-  <div style="${s.row}"><div style="${s.label}">Retainer Selected</div><div style="${s.value}">${retainerLabel}</div></div>
-  <div style="${s.row}"><div style="${s.label}">Payment</div><div style="${s.price}">${formattedPaymentAmount} paid via Stripe</div></div>
-  <div style="${s.row}"><div style="${s.label}">Governing Law</div><div style="${s.value}">State of Michigan</div></div>
-
-  <div style="margin-top:24px;background:#fafafa;border:1px solid #eee;border-radius:6px;padding:24px;">
-    <div style="${s.contractSection}"><div style="${s.contractTitle}">1. Parties</div><p style="${s.contractText}">This Service Agreement is entered into between Caleb Hingos, operating as Vivid Acuity, LLC (caleb@vividacuity.com), Upper Peninsula, Michigan - and Craig Reindl, operating as Top View Taxidermy, Kenosha, Wisconsin. Together referred to as the parties.</p></div>
-    <div style="${s.contractSection}"><div style="${s.contractTitle}">2. Scope of Work</div><p style="${s.contractText}">Vivid Acuity, LLC has completed the following for Top View Taxidermy: (1) A custom logo designed from scratch, delivered in all required file formats. (2) A fully custom website including Home, About, Services, Gallery, Pricing and Policies, FAQ, Testimonials, and Contact sections - responsive across all devices, with a professionally edited photo gallery, search engine setup, and live deployment.</p></div>
-    <div style="${s.contractSection}"><div style="${s.contractTitle}">3. Project Fees</div><p style="${s.contractText}">Setup Fee: $100 - Custom Logo Design: $150 - Website Design and Development: $250 - One-Time Total: $500. Full payment of $500.00 is due upon signing this agreement, processed via Stripe.</p></div>
-    <div style="${s.contractSection}"><div style="${s.contractTitle}">4. Ongoing Maintenance Retainer</div><p style="${s.contractText}">Following the one-time payment, an optional maintenance retainer is available. Monthly Plan: $30/month. Annual Plan: $300/year (saves $60). Covers hosting oversight, uptime monitoring, minor content updates, and dependency maintenance. Either party may cancel with 30 days written notice.</p></div>
-    <div style="${s.contractSection}"><div style="${s.contractTitle}">5. Payment Terms</div><p style="${s.contractText}">Full one-time balance of $500.00 is due upon signing. Retainer (if elected) begins on the first of the month following signing. Payment via Stripe. Balances unpaid after 15 days are subject to 1.5% monthly interest. Intellectual property transfers to the client upon receipt of full payment.</p></div>
-    <div style="${s.contractSection}"><div style="${s.contractTitle}">6. Intellectual Property</div><p style="${s.contractText}">Upon receipt of full payment, all rights to the logo and website - including all design files, code, and content - transfer fully to Craig Reindl / Top View Taxidermy. Vivid Acuity, LLC retains the right to display the work in its portfolio and marketing materials.</p></div>
-    <div style="${s.contractSection}"><div style="${s.contractTitle}">7. Revisions</div><p style="${s.contractText}">Up to 2 rounds of revisions are included. Additional revisions are billed at $75.00/hour. Revision requests must be submitted in writing.</p></div>
-    <div style="${s.contractSection}"><div style="${s.contractTitle}">8. Satisfaction Guarantee</div><p style="${s.contractText}">If the client is not fully satisfied with the completed website and logo within 3 months of launch, Vivid Acuity, LLC will issue a full refund of all fees paid. This guarantee is void if the client has materially altered the delivered work.</p></div>
-    <div style="${s.contractSection}"><div style="${s.contractTitle}">9. Limitation of Liability</div><p style="${s.contractText}">Total liability of Vivid Acuity, LLC is limited to the total fees paid under this agreement. Vivid Acuity, LLC is not liable for any indirect, incidental, or consequential damages.</p></div>
-    <div style="${s.contractSection}"><div style="${s.contractTitle}">10. Termination</div><p style="${s.contractText}">Either party may terminate with 14 days written notice. Upon termination, the client owes fees for all work completed to that date. One-time fees are non-refundable once deliverables are provided. The satisfaction guarantee supersedes this clause where applicable.</p></div>
-    <div style="${s.contractSection}"><div style="${s.contractTitle}">11. Governing Law</div><p style="${s.contractText}">This agreement is governed by the laws of the State of Michigan.</p></div>
-    <div style="${s.contractSection}"><div style="${s.contractTitle}">Effective Date</div><p style="${s.contractText}">March 31, 2025</p></div>
-  </div>
-
-  <div style="${s.sigBlock}">
-    <div style="${s.sigLabel}">Client Signature - Service Agreement</div>
-    ${contractSigHtml}
-    <div style="${s.sigName}">${safeClientName} - Top View Taxidermy</div>
-    <div style="${s.sigDate}">Signed ${safeContractSignedAt}</div>
-  </div>
-
-  <div style="${s.sigBlock}">
-    <div style="${s.sigLabel}">Vivid Acuity, LLC</div>
-    <div style="height:40px;border-bottom:1.5px solid #1a1a1a;margin:8px 0;"></div>
-    <div style="${s.sigName}">Caleb Hingos - Vivid Acuity, LLC</div>
-    <div style="${s.sigDate}">${now}</div>
-  </div>
-
-  <div style="margin-top:32px;background:rgba(58,182,211,0.08);border:1px solid rgba(58,182,211,0.2);border-radius:6px;padding:20px;text-align:center;">
-    <p style="color:#2a7a5a;font-family:sans-serif;font-size:13px;margin:0;">All done. Reach out to Craig to confirm everything is live.</p>
-  </div>
-</div>
-  `;
+  // Build Email 2: Signed Agreement
+  const agreementAttachments = [];
+  const contractSigCid = contractSigBase64 ? 'contract-signature' : null;
+  if (contractSigBase64) {
+    agreementAttachments.push({
+      filename: 'contract-signature.png',
+      content: contractSigBase64,
+      content_type: 'image/png',
+      disposition: 'inline',
+      content_id: 'contract-signature',
+    });
+  }
+  const agreementHtml = buildAgreementHtml({ safeClientName, safeContractSignedAt, retainerLabel, formattedPaymentAmount, effectiveDate, now, contractSigCid });
 
   try {
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${resendApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: 'Vivid Acuity <onboarding@resend.dev>',
-        to: ['caleb@vividacuity.com'],
-        subject: `Signed Documents - ${normalizedClientName} / Top View Taxidermy`,
-        html,
+    const headers = { 'Authorization': `Bearer ${resendApiKey}`, 'Content-Type': 'application/json' };
+    const to = ['caleb@vividacuity.com'];
+    const from = 'Vivid Acuity <onboarding@resend.dev>';
+
+    const [proposalRes, agreementRes] = await Promise.all([
+      fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          from, to,
+          subject: `Signed Proposal - ${normalizedClientName} / Top View Taxidermy`,
+          html: proposalHtml,
+          attachments: proposalAttachments.length ? proposalAttachments : undefined,
+        }),
       }),
-    });
+      fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          from, to,
+          subject: `Signed Agreement - ${normalizedClientName} / Top View Taxidermy`,
+          html: agreementHtml,
+          attachments: agreementAttachments.length ? agreementAttachments : undefined,
+        }),
+      }),
+    ]);
 
-    const data = await response.json();
+    const proposalData = await proposalRes.json().catch(() => ({}));
+    const agreementData = await agreementRes.json().catch(() => ({}));
 
-    if (response.ok) {
-      return res.status(200).json({ success: true, id: data.id });
-    } else {
-      return res.status(response.status).json({ error: data });
+    if (!proposalRes.ok || !agreementRes.ok) {
+      const errors = [];
+      if (!proposalRes.ok) errors.push({ type: 'proposal', error: proposalData });
+      if (!agreementRes.ok) errors.push({ type: 'agreement', error: agreementData });
+      return res.status(500).json({ error: 'One or more emails failed to send.', details: errors });
     }
+
+    return res.status(200).json({ success: true, proposalId: proposalData.id, agreementId: agreementData.id });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
