@@ -113,6 +113,7 @@ const PLAN_OPTIONS = [
     label: 'None',
     sub: 'No maintenance plan selected',
     shortLabel: 'No Maintenance',
+    displayPrice: '$0',
     dueToday: 500,
     detail: '$500 due today for the completed logo and website project.',
     followUp: 'No recurring maintenance charges will be scheduled.',
@@ -123,6 +124,7 @@ const PLAN_OPTIONS = [
     label: 'Monthly',
     sub: 'First charge May 1, 2026',
     shortLabel: 'Monthly - $30/mo',
+    displayPrice: '$30/mo',
     dueToday: 500,
     detail: '$500 due today. Monthly maintenance of $30 begins May 1, 2026.',
     followUp: '$30/month starts May 1, 2026.',
@@ -133,6 +135,7 @@ const PLAN_OPTIONS = [
     label: 'Annual',
     sub: 'Coverage through May 1, 2027',
     shortLabel: 'Annual - $300/yr',
+    displayPrice: '$300/yr',
     dueToday: 800,
     detail: '$800 due today: $500 project fee plus $300 annual maintenance.',
     followUp: 'Annual maintenance covers May 1, 2026 through May 1, 2027.',
@@ -326,17 +329,38 @@ function openPrintableDocuments(data) {
   return true
 }
 
-function SignatureCanvas({ label, onConfirm, locked }) {
+function SignatureCanvas({ label, onConfirm, locked, initialName = '', initialSignatureImage = '' }) {
   const canvasRef = useRef(null)
   const isDrawing = useRef(false)
-  const [hasSig, setHasSig] = useState(false)
-  const [typedName, setTypedName] = useState('')
+  const [hasSig, setHasSig] = useState(Boolean(initialSignatureImage))
+  const [typedName, setTypedName] = useState(initialName)
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return undefined
 
     const ctx = canvas.getContext('2d')
+
+    const drawSavedSignature = (signatureImage) => {
+      if (!signatureImage) return
+
+      const image = new Image()
+      image.onload = () => {
+        const rect = canvas.getBoundingClientRect()
+        const canvasWidth = rect.width
+        const canvasHeight = rect.height
+        const scale = Math.min(canvasWidth / image.width, canvasHeight / image.height, 1)
+        const drawWidth = image.width * scale
+        const drawHeight = image.height * scale
+        const drawX = (canvasWidth - drawWidth) / 2
+        const drawY = (canvasHeight - drawHeight) / 2
+
+        ctx.clearRect(0, 0, canvasWidth, canvasHeight)
+        ctx.drawImage(image, drawX, drawY, drawWidth, drawHeight)
+        setHasSig(true)
+      }
+      image.src = signatureImage
+    }
 
     const resize = () => {
       const rect = canvas.getBoundingClientRect()
@@ -349,6 +373,10 @@ function SignatureCanvas({ label, onConfirm, locked }) {
       ctx.lineWidth = 2.5
       ctx.lineCap = 'round'
       ctx.lineJoin = 'round'
+
+      if (initialSignatureImage) {
+        drawSavedSignature(initialSignatureImage)
+      }
     }
 
     const getPos = (event) => {
@@ -560,6 +588,8 @@ function ProposalStep({ onSigned, defaultName, previewSignatureImage }) {
 
       <SignatureCanvas
         label="Proposal - Draw your signature"
+        initialName={defaultName}
+        initialSignatureImage={previewSignatureImage}
         onConfirm={(name, signatureImage) => onSigned(name, signatureImage)}
       />
     </div>
@@ -591,7 +621,7 @@ function MaintenancePlanSelector({ value, onSelect }) {
                 <div className="plan-option-sub">{option.sub}</div>
               </div>
             </div>
-            <div className="plan-option-price">{formatMoney(option.dueToday)}</div>
+            <div className="plan-option-price">{option.displayPrice}</div>
           </button>
         )
       })}
@@ -599,8 +629,27 @@ function MaintenancePlanSelector({ value, onSelect }) {
   )
 }
 
-function AgreementStep({ proposalName, onContinue, previewSignatureImage }) {
-  const [plan, setPlan] = useState('none')
+function TopBackButton({ onBack }) {
+  return (
+    <button className="top-back-btn" type="button" onClick={onBack}>
+      <span className="top-back-icon" aria-hidden="true">←</span>
+      <span>Back</span>
+    </button>
+  )
+}
+
+function StepActions({ primaryLabel, onPrimary, primaryDisabled = false, primaryClassName = 'btn-primary' }) {
+  return (
+    <div className="step-actions">
+      <button className={primaryClassName} type="button" onClick={onPrimary} disabled={primaryDisabled}>
+        {primaryLabel}
+      </button>
+    </div>
+  )
+}
+
+function AgreementStep({ proposalName, onContinue, previewSignatureImage, initialPlan = 'none' }) {
+  const [plan, setPlan] = useState(initialPlan)
 
   return (
     <div className="fade-up">
@@ -639,9 +688,7 @@ function AgreementStep({ proposalName, onContinue, previewSignatureImage }) {
       <SavedSignatureNotice />
       <DocumentSignaturePreview clientName={proposalName} clientSignatureImage={previewSignatureImage} />
 
-      <button className="btn-primary" type="button" onClick={() => onContinue({ retainer: plan })}>
-        Continue to Payment
-      </button>
+      <StepActions onPrimary={() => onContinue({ retainer: plan })} primaryLabel="Continue to Payment" />
     </div>
   )
 }
@@ -740,9 +787,11 @@ function PaymentStep({ signedData, onPaid }) {
 
       {error && <p className="payment-error">{error}</p>}
 
-      <button className="btn-primary" type="button" onClick={handleSubmit} disabled={loading}>
-        {loading ? 'Processing...' : `Pay ${formatMoney(plan.dueToday)} - Complete Agreement`}
-      </button>
+      <StepActions
+        onPrimary={handleSubmit}
+        primaryDisabled={loading}
+        primaryLabel={loading ? 'Processing...' : `Pay ${formatMoney(plan.dueToday)} - Complete Agreement`}
+      />
 
       <div className="stripe-note">
         <span>🔒</span>
@@ -788,6 +837,12 @@ export default function ClientOnboarding() {
   const timestamp = () => new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
   const progressIndex = step <= 3 ? step : 3
 
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+    document.documentElement.scrollTop = 0
+    document.body.scrollTop = 0
+  }, [step])
+
   const printableData = {
     clientName: proposalName,
     proposalSignedAt,
@@ -817,6 +872,10 @@ export default function ClientOnboarding() {
       )}
 
       <div className="app">
+        {step > 1 && step < 4 && (
+          <TopBackButton onBack={() => setStep((currentStep) => currentStep - 1)} />
+        )}
+
         {step === 1 && (
           <ProposalStep
             defaultName={proposalName}
@@ -833,6 +892,7 @@ export default function ClientOnboarding() {
         {step === 2 && (
           <AgreementStep
             proposalName={proposalName}
+            initialPlan={signedData.retainer}
             previewSignatureImage={proposalSigImage}
             onContinue={(data) => {
               setSignedData(data)
