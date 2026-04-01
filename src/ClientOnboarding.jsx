@@ -6,6 +6,9 @@ const BUSINESS_NAME = 'Top View Taxidermy'
 const OWNER_NAME = 'Caleb Hingos'
 const COMPANY_NAME = 'Vivid Acuity, LLC'
 const SAVED_SIGNATURE_SRC = '/signature.png?v=1'
+const STORAGE_KEY = 'vivid-acuity-onboarding-state'
+const FINALIZED_SESSION_PREFIX = 'vivid-acuity-finalized-session:'
+const PENDING_SESSION_KEY = 'vivid-acuity-pending-session'
 
 const PROPOSAL_CARDS = [
   {
@@ -162,6 +165,36 @@ function formatMoney(amount) {
   }).format(amount)
 }
 
+function loadStoredOnboardingState() {
+  if (typeof window === 'undefined') return null
+
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+    if (!raw) return null
+
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function persistOnboardingState(state) {
+  if (typeof window === 'undefined') return
+
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+}
+
+function clearCheckoutParams() {
+  if (typeof window === 'undefined') return
+
+  const nextUrl = new URL(window.location.href)
+  nextUrl.searchParams.delete('checkout')
+  nextUrl.searchParams.delete('session_id')
+  nextUrl.searchParams.delete('canceled')
+  window.history.replaceState({}, document.title, `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`)
+}
+
 async function sendEmail(payload) {
   const res = await fetch('/api/send-email', {
     method: 'POST',
@@ -187,6 +220,32 @@ async function toDataUrl(src) {
     reader.onerror = () => reject(new Error('Failed to read saved signature image.'))
     reader.readAsDataURL(blob)
   })
+}
+
+async function createCheckoutSession(payload) {
+  const res = await fetch('/api/create-checkout-session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to create Stripe checkout session.')
+  }
+
+  return data
+}
+
+async function fetchCheckoutSession(sessionId) {
+  const res = await fetch(`/api/checkout-session?session_id=${encodeURIComponent(sessionId)}`)
+  const data = await res.json().catch(() => ({}))
+
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to verify Stripe checkout session.')
+  }
+
+  return data
 }
 
 function generatePrintableHTML({
@@ -693,7 +752,7 @@ function AgreementStep({ proposalName, onContinue, previewSignatureImage, initia
   )
 }
 
-function PaymentStep({ signedData, onPaid }) {
+function PaymentStep({ proposalName, signedData, proposalSignedAt, contractSignedAt, onCancel }) {
   const initialPlan = signedData?.retainer || 'none'
   const [retainer, setRetainer] = useState(initialPlan)
   const [editing, setEditing] = useState(false)
@@ -707,10 +766,16 @@ function PaymentStep({ signedData, onPaid }) {
     setError('')
 
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1600))
-      onPaid(retainer)
+      const { url } = await createCheckoutSession({
+        clientName: proposalName,
+        retainer,
+        proposalSignedAt,
+        contractSignedAt,
+      })
+
+      window.location.assign(url)
     } catch (err) {
-      setError(err.message || 'Payment simulation failed.')
+      setError(err.message || 'Payment setup failed.')
     } finally {
       setLoading(false)
     }
@@ -723,7 +788,7 @@ function PaymentStep({ signedData, onPaid }) {
       <div className="section-eyebrow">Step 3 of 3</div>
       <div className="section-title">Payment</div>
       <p className="section-lead">
-        Review the selected plan, update it if needed, and complete the simulated payment.
+        Review the selected plan, update it if needed, and complete payment in Stripe Checkout.
         Once payment succeeds, your saved Vivid Acuity signature is applied to both
         documents automatically.
       </p>
@@ -790,12 +855,15 @@ function PaymentStep({ signedData, onPaid }) {
       <StepActions
         onPrimary={handleSubmit}
         primaryDisabled={loading}
-        primaryLabel={loading ? 'Processing...' : `Pay ${formatMoney(plan.dueToday)} - Complete Agreement`}
+        primaryLabel={loading ? 'Redirecting...' : `Pay ${formatMoney(plan.dueToday)} in Stripe`}
       />
 
       <div className="stripe-note">
         <span>🔒</span>
-        <span>Stripe is still simulated until the secret key is wired on the server.</span>
+        <span>
+          Secure Stripe Checkout handles the payment. Monthly maintenance begins on May 1, 2026.
+          {onCancel ? ' Checkout can be canceled and resumed here.' : ''}
+        </span>
       </div>
     </div>
   )
@@ -824,14 +892,16 @@ function ThankYouStep({ clientName, plan, onPrint }) {
 }
 
 export default function ClientOnboarding() {
-  const [step, setStep] = useState(1)
-  const [proposalName, setProposalName] = useState(CLIENT_NAME)
-  const [signedData, setSignedData] = useState({ retainer: 'none' })
-  const [proposalSignedAt, setProposalSignedAt] = useState('')
-  const [contractSignedAt, setContractSignedAt] = useState('')
-  const [proposalSigImage, setProposalSigImage] = useState('')
-  const [contractSigImage, setContractSigImage] = useState('')
+  const storedState = loadStoredOnboardingState()
+  const [step, setStep] = useState(storedState?.step || 1)
+  const [proposalName, setProposalName] = useState(storedState?.proposalName || CLIENT_NAME)
+  const [signedData, setSignedData] = useState(storedState?.signedData || { retainer: 'none' })
+  const [proposalSignedAt, setProposalSignedAt] = useState(storedState?.proposalSignedAt || '')
+  const [contractSignedAt, setContractSignedAt] = useState(storedState?.contractSignedAt || '')
+  const [proposalSigImage, setProposalSigImage] = useState(storedState?.proposalSigImage || '')
+  const [contractSigImage, setContractSigImage] = useState(storedState?.contractSigImage || '')
   const [emailError, setEmailError] = useState('')
+  const [checkoutStatus, setCheckoutStatus] = useState('')
   const ownerSigImage = SAVED_SIGNATURE_SRC
 
   const timestamp = () => new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
@@ -842,6 +912,101 @@ export default function ClientOnboarding() {
     document.documentElement.scrollTop = 0
     document.body.scrollTop = 0
   }, [step])
+
+  useEffect(() => {
+    persistOnboardingState({
+      step,
+      proposalName,
+      signedData,
+      proposalSignedAt,
+      contractSignedAt,
+      proposalSigImage,
+      contractSigImage,
+    })
+  }, [step, proposalName, signedData, proposalSignedAt, contractSignedAt, proposalSigImage, contractSigImage])
+
+  useEffect(() => {
+    const currentUrl = new URL(window.location.href)
+    const canceled = currentUrl.searchParams.get('canceled')
+    const checkoutFlag = currentUrl.searchParams.get('checkout')
+    const sessionId = currentUrl.searchParams.get('session_id')
+
+    if (canceled === '1') {
+      window.localStorage.removeItem(PENDING_SESSION_KEY)
+      setStep(3)
+      setCheckoutStatus('Stripe Checkout was canceled. Your signatures and plan selection are still saved here.')
+      clearCheckoutParams()
+      return
+    }
+
+    if (checkoutFlag === 'success' && sessionId) {
+      window.localStorage.setItem(PENDING_SESSION_KEY, sessionId)
+      setStep(3)
+      setCheckoutStatus('Verifying your Stripe payment...')
+      clearCheckoutParams()
+    }
+  }, [])
+
+  useEffect(() => {
+    const sessionId = window.localStorage.getItem(PENDING_SESSION_KEY)
+    if (!sessionId) return
+
+    let active = true
+
+    const finalizeCheckout = async () => {
+      setStep(3)
+      setCheckoutStatus('Verifying your Stripe payment...')
+      setEmailError('')
+
+      try {
+        const session = await fetchCheckoutSession(sessionId)
+
+        if (!active) return
+
+        if (window.localStorage.getItem(`${FINALIZED_SESSION_PREFIX}${sessionId}`) === '1') {
+          window.localStorage.removeItem(PENDING_SESSION_KEY)
+          setSignedData((current) => ({ ...current, retainer: session.retainer }))
+          setStep(4)
+          setCheckoutStatus('')
+          return
+        }
+
+        const ownerSigDataUrl = await toDataUrl(SAVED_SIGNATURE_SRC)
+
+        await sendEmail({
+          clientName: proposalName,
+          retainer: session.retainer,
+          proposalSignedAt,
+          contractSignedAt,
+          paymentAmount: session.amountTotal,
+          proposalSigImage,
+          contractSigImage,
+          ownerSigImage: ownerSigDataUrl,
+          planLabel: session.plan.shortLabel,
+          planDetail: session.plan.detail,
+          planCoverageLine: session.plan.coverage,
+        })
+
+        if (!active) return
+
+        window.localStorage.setItem(`${FINALIZED_SESSION_PREFIX}${sessionId}`, '1')
+        window.localStorage.removeItem(PENDING_SESSION_KEY)
+        setSignedData((current) => ({ ...current, retainer: session.retainer }))
+        setStep(4)
+        setCheckoutStatus('')
+      } catch (err) {
+        if (!active) return
+        setCheckoutStatus('')
+        setEmailError(err.message || 'Unable to verify Stripe payment.')
+      }
+    }
+
+    finalizeCheckout()
+
+    return () => {
+      active = false
+    }
+  }, [proposalName, proposalSignedAt, contractSignedAt, proposalSigImage, contractSigImage])
 
   const printableData = {
     clientName: proposalName,
@@ -905,39 +1070,17 @@ export default function ClientOnboarding() {
 
         {step === 3 && (
           <PaymentStep
+            proposalName={proposalName}
             signedData={signedData}
-            onPaid={async (retainer) => {
-              const plan = getPlan(retainer)
-
-              setSignedData((current) => ({ ...current, retainer }))
-              setEmailError('')
-
-              try {
-                const ownerSigDataUrl = await toDataUrl(SAVED_SIGNATURE_SRC)
-
-                await sendEmail({
-                  clientName: proposalName,
-                  retainer,
-                  proposalSignedAt,
-                  contractSignedAt,
-                  paymentAmount: plan.dueToday.toFixed(2),
-                  proposalSigImage,
-                  contractSigImage,
-                  ownerSigImage: ownerSigDataUrl,
-                  planLabel: plan.shortLabel,
-                  planDetail: plan.detail,
-                  planCoverageLine: plan.coverage,
-                })
-              } catch (err) {
-                setEmailError(err.message || 'Failed to send confirmation email.')
-              }
-
-              setStep(4)
-            }}
+            proposalSignedAt={proposalSignedAt}
+            contractSignedAt={contractSignedAt}
+            onCancel={Boolean(checkoutStatus)}
           />
         )}
 
+        {checkoutStatus && step === 3 && <p className="payment-note">{checkoutStatus}</p>}
         {emailError && step === 4 && <p className="payment-error center-error">{emailError}</p>}
+        {emailError && step === 3 && <p className="payment-error">{emailError}</p>}
 
         {step === 4 && (
           <ThankYouStep
