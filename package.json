@@ -2,6 +2,7 @@
   "name": "vivid-acuity-onboarding",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
