@@ -5,6 +5,42 @@ function json(res, status, payload) {
   return res.status(status).json(payload)
 }
 
+const MAX_BODY_BYTES = 1 * 1024 * 1024 // 1 MB
+
+async function parseJsonBody(req) {
+  if (req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)) {
+    return req.body
+  }
+
+  const contentType = (req.headers?.['content-type'] || '').toLowerCase()
+  if (contentType && !contentType.includes('application/json')) {
+    return {}
+  }
+
+  let totalBytes = 0
+  const chunks = []
+
+  for await (const chunk of req) {
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+    totalBytes += buf.length
+    if (totalBytes > MAX_BODY_BYTES) {
+      throw new Error('Request body too large.')
+    }
+    chunks.push(buf)
+  }
+
+  if (!chunks.length) return {}
+
+  const raw = Buffer.concat(chunks).toString('utf8').trim()
+  if (!raw) return {}
+
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return {}
+  }
+}
+
 function buildLineItems(retainer) {
   const projectFeeItem = {
     price_data: {
@@ -127,12 +163,13 @@ export default async function handler(req, res) {
     return json(res, 500, { error: 'Stripe secret key is missing. Add STRIPE_SECRET_KEY on the server.' })
   }
 
-  const clientName = typeof req.body?.clientName === 'string' ? req.body.clientName.trim() : ''
-  const retainer = typeof req.body?.retainer === 'string' ? req.body.retainer.trim() : ''
+  const body = await parseJsonBody(req)
+  const clientName = typeof body?.clientName === 'string' ? body.clientName.trim() : ''
+  const retainer = typeof body?.retainer === 'string' ? body.retainer.trim() : ''
   const proposalSignedAt =
-    typeof req.body?.proposalSignedAt === 'string' ? req.body.proposalSignedAt.trim() : ''
+    typeof body?.proposalSignedAt === 'string' ? body.proposalSignedAt.trim() : ''
   const contractSignedAt =
-    typeof req.body?.contractSignedAt === 'string' ? req.body.contractSignedAt.trim() : ''
+    typeof body?.contractSignedAt === 'string' ? body.contractSignedAt.trim() : ''
 
   if (!clientName) return json(res, 400, { error: 'Client name is required.' })
   if (!VALID_RETAINERS.has(retainer)) return json(res, 400, { error: 'A valid maintenance plan is required.' })
@@ -162,7 +199,11 @@ export default async function handler(req, res) {
       })
     }
 
-    return json(res, 200, { id: data.id, clientSecret: data.client_secret })
+    return json(res, 200, {
+      id: data.id,
+      clientSecret: data.client_secret,
+      livemode: Boolean(data.livemode),
+    })
   } catch (error) {
     return json(res, 500, { error: error.message || 'Unable to reach Stripe.' })
   }

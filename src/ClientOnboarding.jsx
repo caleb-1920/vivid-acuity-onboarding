@@ -7,7 +7,8 @@ import {
 } from '@stripe/react-stripe-js/checkout'
 import './ClientOnboarding.css'
 
-const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY)
+const STRIPE_PUBLISHABLE_KEY = (import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '').trim()
+const stripePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY) : null
 
 const CLIENT_NAME = 'Craig Reindl'
 const BUSINESS_NAME = 'Top View Taxidermy'
@@ -174,6 +175,13 @@ function formatMoney(amount) {
   }).format(amount)
 }
 
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (char) => {
+    const entities = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
+    return entities[char]
+  })
+}
+
 function loadStoredOnboardingState() {
   if (typeof window === 'undefined') return null
 
@@ -202,6 +210,13 @@ function clearCheckoutParams() {
   nextUrl.searchParams.delete('session_id')
   nextUrl.searchParams.delete('canceled')
   window.history.replaceState({}, document.title, `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`)
+}
+
+function getStripeKeyMode(key) {
+  if (key.startsWith('sk_') || key.startsWith('rk_')) return 'secret_key_error'
+  if (key.startsWith('pk_live_')) return 'live'
+  if (key.startsWith('pk_test_')) return 'test'
+  return 'unknown'
 }
 
 async function sendEmail(payload) {
@@ -243,6 +258,12 @@ async function createCheckoutSession(payload) {
     throw new Error(data.error || 'Failed to create Stripe checkout session.')
   }
 
+  if (typeof data.clientSecret !== 'string' || !data.clientSecret.trim()) {
+    throw new Error(
+      'Stripe did not return a client secret. On Vercel, verify /api/create-checkout-session is deployed and STRIPE_SECRET_KEY is set.'
+    )
+  }
+
   return data
 }
 
@@ -268,21 +289,39 @@ function generatePrintableHTML({
 }) {
   const now = new Date().toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' })
   const effectiveDate = new Date().toLocaleDateString('en-US', { dateStyle: 'long' })
-  const proposalSigTag = proposalSigImage
-    ? `<img src="${proposalSigImage}" style="max-width:320px;height:80px;display:block;margin:8px 0;object-fit:contain;" />`
-    : '<div style="border-bottom:1.5px solid #1a1a1a;height:40px;margin:8px 0;"></div>'
-  const contractSigTag = contractSigImage
-    ? `<img src="${contractSigImage}" style="max-width:320px;height:80px;display:block;margin:8px 0;object-fit:contain;" />`
-    : '<div style="border-bottom:1.5px solid #1a1a1a;height:40px;margin:8px 0;"></div>'
-  const ownerSigTag = ownerSigImage
-    ? `<img src="${ownerSigImage}" style="max-width:320px;height:80px;display:block;margin:8px 0;object-fit:contain;" />`
-    : '<div style="border-bottom:1.5px solid #1a1a1a;height:40px;margin:8px 0;"></div>'
+  const sanitizePrintableImageSource = (src) => {
+    if (typeof src !== 'string') return ''
+
+    const trimmed = src.trim()
+    if (trimmed.startsWith('data:image/')) return trimmed
+    if (/^\/[a-zA-Z0-9/_\-.]+(?:\?[a-zA-Z0-9=&._-]+)?$/.test(trimmed)) return trimmed
+    return ''
+  }
+
+  const buildPrintableSignatureTag = (src) => {
+    const safeSrc = sanitizePrintableImageSource(src)
+    return safeSrc
+      ? `<img src="${escapeHtml(safeSrc)}" style="max-width:320px;height:80px;display:block;margin:8px 0;object-fit:contain;" />`
+      : '<div style="border-bottom:1.5px solid #1a1a1a;height:40px;margin:8px 0;"></div>'
+  }
+
+  const safeClientName = escapeHtml(clientName)
+  const safeProposalSignedAt = escapeHtml(proposalSignedAt)
+  const safeContractSignedAt = escapeHtml(contractSignedAt)
+  const safeNow = escapeHtml(now)
+  const safeEffectiveDate = escapeHtml(effectiveDate)
+  const safePlanShortLabel = escapeHtml(plan.shortLabel)
+  const safePlanDetail = escapeHtml(plan.detail)
+  const safePlanCoverage = escapeHtml(plan.coverage)
+  const proposalSigTag = buildPrintableSignatureTag(proposalSigImage)
+  const contractSigTag = buildPrintableSignatureTag(contractSigImage)
+  const ownerSigTag = buildPrintableSignatureTag(ownerSigImage)
 
   return `<!DOCTYPE html>
 <html>
   <head>
     <meta charset="UTF-8" />
-    <title>Signed Documents - ${clientName}</title>
+    <title>Signed Documents - ${safeClientName}</title>
     <style>
       body { font-family: Georgia, serif; color: #1a1a1a; background: #fff; padding: 48px; max-width: 820px; margin: 0 auto; line-height: 1.6; }
       .co-name { font-family: sans-serif; font-size: 11px; letter-spacing: 0.25em; text-transform: uppercase; color: #eb6611; margin-bottom: 6px; }
@@ -307,18 +346,20 @@ function generatePrintableHTML({
     <div class="page-break">
       <div class="co-name">${COMPANY_NAME}</div>
       <h1>Project Proposal</h1>
-      <div class="subtitle">${clientName} / ${BUSINESS_NAME} - ${now}</div>
+      <div class="subtitle">${safeClientName} / ${BUSINESS_NAME} - ${safeNow}</div>
 
-      <div class="row"><div class="label">Client</div><div class="value">${clientName}</div></div>
+      <div class="row"><div class="label">Client</div><div class="value">${safeClientName}</div></div>
       <div class="row"><div class="label">Business</div><div class="value">${BUSINESS_NAME}</div></div>
-      <div class="row"><div class="label">Proposal Finalized</div><div class="signed">${proposalSignedAt}</div></div>
+      <div class="row"><div class="label">Proposal Finalized</div><div class="signed">${safeProposalSignedAt}</div></div>
 
       <div class="section-title">Deliverables</div>
       ${PROPOSAL_CARDS.map(
         (card) => `
           <div class="clause">
-            <div class="clause-title">${card.title}</div>
-            <div>${card.items.map((item) => `<div style="font-size:13px;color:#444;">- ${item}</div>`).join('')}</div>
+            <div class="clause-title">${escapeHtml(card.title)}</div>
+            <div>${card.items
+              .map((item) => `<div style="font-size:13px;color:#444;">- ${escapeHtml(item)}</div>`)
+              .join('')}</div>
           </div>
         `
       ).join('')}
@@ -329,15 +370,15 @@ function generatePrintableHTML({
           <div class="sig-col-label">Client</div>
           ${proposalSigTag}
           <div style="border-bottom:1.5px solid #1a1a1a;margin-bottom:4px;"></div>
-          <div class="sig-name">${clientName}</div>
-          <div class="sig-date">Signed ${proposalSignedAt}</div>
+          <div class="sig-name">${safeClientName}</div>
+          <div class="sig-date">Signed ${safeProposalSignedAt}</div>
         </div>
         <div class="sig-col">
           <div class="sig-col-label">${COMPANY_NAME}</div>
           ${ownerSigTag}
           <div style="border-bottom:1.5px solid #1a1a1a;margin-bottom:4px;"></div>
           <div class="sig-name">${OWNER_NAME} - ${COMPANY_NAME}</div>
-          <div class="sig-date">Applied automatically after payment on ${proposalSignedAt}</div>
+          <div class="sig-date">Applied automatically after payment on ${safeProposalSignedAt}</div>
         </div>
       </div>
     </div>
@@ -345,41 +386,41 @@ function generatePrintableHTML({
     <div>
       <div class="co-name">${COMPANY_NAME}</div>
       <h1>Service Agreement</h1>
-      <div class="subtitle">${clientName} / ${BUSINESS_NAME} - ${now}</div>
+      <div class="subtitle">${safeClientName} / ${BUSINESS_NAME} - ${safeNow}</div>
 
-      <div class="row"><div class="label">Agreement Finalized</div><div class="signed">${contractSignedAt}</div></div>
-      <div class="row"><div class="label">Effective Date</div><div class="value">${effectiveDate}</div></div>
-      <div class="row"><div class="label">Selected Plan</div><div class="value">${plan.shortLabel}</div></div>
+      <div class="row"><div class="label">Agreement Finalized</div><div class="signed">${safeContractSignedAt}</div></div>
+      <div class="row"><div class="label">Effective Date</div><div class="value">${safeEffectiveDate}</div></div>
+      <div class="row"><div class="label">Selected Plan</div><div class="value">${safePlanShortLabel}</div></div>
       <div class="row"><div class="label">Due Today</div><div class="value">${formatMoney(plan.dueToday)}</div></div>
 
       <div class="section-title">Agreement Terms</div>
       ${CONTRACT_SECTIONS.map(
         (section) => `
           <div class="clause">
-            <div class="clause-title">${section.title}</div>
-            <p style="font-size:12px;color:#555;line-height:1.75;margin:0;">${section.content}</p>
+            <div class="clause-title">${escapeHtml(section.title)}</div>
+            <p style="font-size:12px;color:#555;line-height:1.75;margin:0;">${escapeHtml(section.content)}</p>
           </div>
         `
       ).join('')}
 
       <div class="section-title">Selected Maintenance Plan</div>
-      <p style="font-size:13px;color:#444;">${plan.detail}</p>
-      <p style="font-size:13px;color:#444;">${plan.coverage}</p>
+      <p style="font-size:13px;color:#444;">${safePlanDetail}</p>
+      <p style="font-size:13px;color:#444;">${safePlanCoverage}</p>
 
       <div class="sig-block">
         <div class="sig-col">
           <div class="sig-col-label">Client</div>
           ${contractSigTag}
           <div style="border-bottom:1.5px solid #1a1a1a;margin-bottom:4px;"></div>
-          <div class="sig-name">${clientName}</div>
-          <div class="sig-date">Signed ${contractSignedAt}</div>
+          <div class="sig-name">${safeClientName}</div>
+          <div class="sig-date">Signed ${safeContractSignedAt}</div>
         </div>
         <div class="sig-col">
           <div class="sig-col-label">${COMPANY_NAME}</div>
           ${ownerSigTag}
           <div style="border-bottom:1.5px solid #1a1a1a;margin-bottom:4px;"></div>
           <div class="sig-name">${OWNER_NAME} - ${COMPANY_NAME}</div>
-          <div class="sig-date">Applied automatically after payment on ${contractSignedAt}</div>
+          <div class="sig-date">Applied automatically after payment on ${safeContractSignedAt}</div>
         </div>
       </div>
     </div>
@@ -902,13 +943,36 @@ function PaymentStep({ proposalName, signedData, proposalSignedAt, contractSigne
       setError('')
       setClientSecret('')
 
+      if (!STRIPE_PUBLISHABLE_KEY) {
+        setError(
+          'Stripe publishable key is missing in this deployment. Add VITE_STRIPE_PUBLISHABLE_KEY in Vercel and redeploy.'
+        )
+        setLoading(false)
+        return
+      }
+
       try {
-        const { clientSecret: secret } = await createCheckoutSession({
+        const { clientSecret: secret, livemode } = await createCheckoutSession({
           clientName: proposalName,
           retainer,
           proposalSignedAt,
           contractSignedAt,
         })
+
+        const publishableKeyMode = getStripeKeyMode(STRIPE_PUBLISHABLE_KEY)
+        const serverMode = livemode ? 'live' : 'test'
+
+        if (publishableKeyMode === 'secret_key_error') {
+          throw new Error(
+            'CRITICAL: A secret key was set in VITE_STRIPE_PUBLISHABLE_KEY. This exposes your Stripe secret to the browser. Fix this immediately in your environment variables.'
+          )
+        }
+
+        if (publishableKeyMode !== 'unknown' && publishableKeyMode !== serverMode) {
+          throw new Error(
+            `Stripe key mismatch on this deployment: the browser is using a ${publishableKeyMode} publishable key but the server created a ${serverMode} checkout session.`
+          )
+        }
 
         if (active) setClientSecret(secret)
       } catch (err) {
@@ -1003,7 +1067,7 @@ function PaymentStep({ proposalName, signedData, proposalSignedAt, contractSigne
 
       {loading && <p className="section-lead" style={{ textAlign: 'center' }}>Loading checkout...</p>}
 
-      {clientSecret && (
+      {clientSecret && stripePromise && (
         <CheckoutElementsProvider
           key={clientSecret}
           stripe={stripePromise}
@@ -1089,7 +1153,7 @@ function ThankYouStep({ clientName, plan, onPrint }) {
       <p className="thankyou-text">
         Payment received, your saved signature was applied to both documents, and a
         confirmation email was sent to
-        `caleb@vividacuity.com`.
+        <code className="thankyou-email">caleb@vividacuity.com</code>.
       </p>
       <div className="thankyou-detail">
         <span>&#10003;</span> {plan.shortLabel} selected
