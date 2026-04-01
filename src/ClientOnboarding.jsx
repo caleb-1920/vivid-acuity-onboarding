@@ -3,6 +3,9 @@ import './ClientOnboarding.css'
 
 const CLIENT_NAME = 'Craig Reindl'
 const BUSINESS_NAME = 'Top View Taxidermy'
+const OWNER_NAME = 'Caleb Hingos'
+const COMPANY_NAME = 'Vivid Acuity, LLC'
+const SAVED_SIGNATURE_SRC = '/signature.png?v=1'
 
 const PROPOSAL_CARDS = [
   {
@@ -171,12 +174,25 @@ async function sendEmail(payload) {
   return data
 }
 
+async function toDataUrl(src) {
+  const response = await fetch(src)
+  const blob = await response.blob()
+
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onloadend = () => resolve(reader.result || '')
+    reader.onerror = () => reject(new Error('Failed to read saved signature image.'))
+    reader.readAsDataURL(blob)
+  })
+}
+
 function generatePrintableHTML({
   clientName,
   proposalSignedAt,
   contractSignedAt,
   proposalSigImage,
   contractSigImage,
+  ownerSigImage,
   plan,
 }) {
   const now = new Date().toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' })
@@ -186,6 +202,9 @@ function generatePrintableHTML({
     : '<div style="border-bottom:1.5px solid #1a1a1a;height:40px;margin:8px 0;"></div>'
   const contractSigTag = contractSigImage
     ? `<img src="${contractSigImage}" style="max-width:320px;height:80px;display:block;margin:8px 0;object-fit:contain;" />`
+    : '<div style="border-bottom:1.5px solid #1a1a1a;height:40px;margin:8px 0;"></div>'
+  const ownerSigTag = ownerSigImage
+    ? `<img src="${ownerSigImage}" style="max-width:320px;height:80px;display:block;margin:8px 0;object-fit:contain;" />`
     : '<div style="border-bottom:1.5px solid #1a1a1a;height:40px;margin:8px 0;"></div>'
 
   return `<!DOCTYPE html>
@@ -215,13 +234,13 @@ function generatePrintableHTML({
   </head>
   <body>
     <div class="page-break">
-      <div class="co-name">Vivid Acuity, LLC</div>
+      <div class="co-name">${COMPANY_NAME}</div>
       <h1>Project Proposal</h1>
       <div class="subtitle">${clientName} / ${BUSINESS_NAME} - ${now}</div>
 
       <div class="row"><div class="label">Client</div><div class="value">${clientName}</div></div>
       <div class="row"><div class="label">Business</div><div class="value">${BUSINESS_NAME}</div></div>
-      <div class="row"><div class="label">Proposal Signed</div><div class="signed">${proposalSignedAt}</div></div>
+      <div class="row"><div class="label">Proposal Finalized</div><div class="signed">${proposalSignedAt}</div></div>
 
       <div class="section-title">Deliverables</div>
       ${PROPOSAL_CARDS.map(
@@ -233,19 +252,31 @@ function generatePrintableHTML({
         `
       ).join('')}
 
-      <div class="section-title">Client Signature</div>
-      ${proposalSigTag}
-      <div style="border-bottom:1.5px solid #1a1a1a;margin-bottom:4px;"></div>
-      <div class="sig-name">${clientName}</div>
-      <div class="sig-date">Signed ${proposalSignedAt}</div>
+      <div class="section-title">Signature Block</div>
+      <div class="sig-block">
+        <div class="sig-col">
+          <div class="sig-col-label">Client</div>
+          ${proposalSigTag}
+          <div style="border-bottom:1.5px solid #1a1a1a;margin-bottom:4px;"></div>
+          <div class="sig-name">${clientName}</div>
+          <div class="sig-date">Signed ${proposalSignedAt}</div>
+        </div>
+        <div class="sig-col">
+          <div class="sig-col-label">${COMPANY_NAME}</div>
+          ${ownerSigTag}
+          <div style="border-bottom:1.5px solid #1a1a1a;margin-bottom:4px;"></div>
+          <div class="sig-name">${OWNER_NAME} - ${COMPANY_NAME}</div>
+          <div class="sig-date">Applied automatically after payment on ${proposalSignedAt}</div>
+        </div>
+      </div>
     </div>
 
     <div>
-      <div class="co-name">Vivid Acuity, LLC</div>
+      <div class="co-name">${COMPANY_NAME}</div>
       <h1>Service Agreement</h1>
       <div class="subtitle">${clientName} / ${BUSINESS_NAME} - ${now}</div>
 
-      <div class="row"><div class="label">Agreement Signed</div><div class="signed">${contractSignedAt}</div></div>
+      <div class="row"><div class="label">Agreement Finalized</div><div class="signed">${contractSignedAt}</div></div>
       <div class="row"><div class="label">Effective Date</div><div class="value">${effectiveDate}</div></div>
       <div class="row"><div class="label">Selected Plan</div><div class="value">${plan.shortLabel}</div></div>
       <div class="row"><div class="label">Due Today</div><div class="value">${formatMoney(plan.dueToday)}</div></div>
@@ -273,10 +304,11 @@ function generatePrintableHTML({
           <div class="sig-date">Signed ${contractSignedAt}</div>
         </div>
         <div class="sig-col">
-          <div class="sig-col-label">Vivid Acuity, LLC</div>
-          <div style="border-bottom:1.5px solid #1a1a1a;height:40px;margin:8px 0;"></div>
-          <div class="sig-name">Caleb Hingos - Vivid Acuity, LLC</div>
-          <div class="sig-date">${now}</div>
+          <div class="sig-col-label">${COMPANY_NAME}</div>
+          ${ownerSigTag}
+          <div style="border-bottom:1.5px solid #1a1a1a;margin-bottom:4px;"></div>
+          <div class="sig-name">${OWNER_NAME} - ${COMPANY_NAME}</div>
+          <div class="sig-date">Applied automatically after payment on ${contractSignedAt}</div>
         </div>
       </div>
     </div>
@@ -421,15 +453,71 @@ function Header({ titlePrefix }) {
   )
 }
 
-function ProposalStep({ onSigned }) {
+function SavedSignatureNotice() {
+  return (
+    <div className="sig-wrap">
+      <span className="sig-label">Saved Signature</span>
+      <div className="plan-summary">
+        <div className="plan-summary-label">Auto-Apply Rule</div>
+        <div className="plan-summary-value">
+          {OWNER_NAME}'s saved {COMPANY_NAME} signature will be stamped onto both
+          documents automatically after payment is completed.
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DocumentSignaturePreview({ clientName, clientSignatureImage }) {
+  const clientPreviewName = clientSignatureImage && clientName ? clientName : ''
+
+  return (
+    <div className="sig-wrap">
+      <span className="sig-label">Document Signature Preview</span>
+      <div className="document-signature-preview">
+        <div className="document-signature-col">
+          <div className="document-signature-role">Client</div>
+          <div className="document-signature-box">
+            {clientSignatureImage ? (
+              <img
+                src={clientSignatureImage}
+                alt={`${clientName || 'Client'} signature preview`}
+                className="document-signature-image"
+              />
+            ) : (
+              <div className="document-signature-placeholder">Client signature will appear here</div>
+            )}
+          </div>
+          <div className="document-signature-line" />
+          <div className="document-signature-name">{clientPreviewName}</div>
+        </div>
+
+        <div className="document-signature-col">
+          <div className="document-signature-role">{COMPANY_NAME}</div>
+          <div className="document-signature-box">
+            <img
+              src={SAVED_SIGNATURE_SRC}
+              alt={`${OWNER_NAME} signature preview`}
+              className="document-signature-image"
+            />
+          </div>
+          <div className="document-signature-line" />
+          <div className="document-signature-name">{OWNER_NAME} - {COMPANY_NAME}</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ProposalStep({ onSigned, defaultName, previewSignatureImage }) {
   return (
     <div className="fade-up">
       <Header titlePrefix="Proposal for" />
       <div className="section-eyebrow">Step 1 of 3</div>
       <div className="section-title">Proposal and Signature</div>
       <p className="section-lead">
-        Review the completed proposal below, then sign to move straight into the service
-        agreement.
+        Review the completed proposal below, then sign to move into the service agreement.
+        Your Vivid Acuity signature will still be applied automatically after payment.
       </p>
 
       {PROPOSAL_CARDS.map((card) => (
@@ -466,6 +554,9 @@ function ProposalStep({ onSigned }) {
           gets refunded. No questions. No runaround.
         </p>
       </div>
+
+      <SavedSignatureNotice />
+      <DocumentSignaturePreview clientName={defaultName} clientSignatureImage={previewSignatureImage} />
 
       <SignatureCanvas
         label="Proposal - Draw your signature"
@@ -508,7 +599,7 @@ function MaintenancePlanSelector({ value, onSelect }) {
   )
 }
 
-function AgreementStep({ proposalName, onSigned }) {
+function AgreementStep({ proposalName, onContinue, previewSignatureImage }) {
   const [plan, setPlan] = useState('none')
 
   return (
@@ -518,8 +609,9 @@ function AgreementStep({ proposalName, onSigned }) {
       <div className="section-eyebrow">Step 2 of 3</div>
       <div className="section-title">Service Agreement and Plan Selection</div>
       <p className="section-lead">
-        Review the agreement, choose the maintenance plan, then sign to move straight to
-        payment.
+        Review the agreement and choose the maintenance plan. Your proposal signature
+        carries forward automatically here, and the saved Vivid Acuity signature is
+        applied after payment completes.
       </p>
 
       <div className="contract-scroll">
@@ -544,16 +636,12 @@ function AgreementStep({ proposalName, onSigned }) {
         </div>
       </div>
 
-      <SignatureCanvas
-        label="Service Agreement - Draw your signature"
-        onConfirm={(_, signatureImage) =>
-          onSigned({
-            name: proposalName,
-            retainer: plan,
-            contractSigImage: signatureImage,
-          })
-        }
-      />
+      <SavedSignatureNotice />
+      <DocumentSignaturePreview clientName={proposalName} clientSignatureImage={previewSignatureImage} />
+
+      <button className="btn-primary" type="button" onClick={() => onContinue({ retainer: plan })}>
+        Continue to Payment
+      </button>
     </div>
   )
 }
@@ -589,6 +677,8 @@ function PaymentStep({ signedData, onPaid }) {
       <div className="section-title">Payment</div>
       <p className="section-lead">
         Review the selected plan, update it if needed, and complete the simulated payment.
+        Once payment succeeds, your saved Vivid Acuity signature is applied to both
+        documents automatically.
       </p>
 
       <div className="summary-shell">
@@ -670,7 +760,8 @@ function ThankYouStep({ clientName, plan, onPrint }) {
       <span className="thankyou-icon">🎉</span>
       <div className="thankyou-title">You are all set, {firstName}.</div>
       <p className="thankyou-text">
-        Payment received, signatures captured, and a confirmation email was sent to
+        Payment received, your saved signature was applied to both documents, and a
+        confirmation email was sent to
         `caleb@vividacuity.com`.
       </p>
       <div className="thankyou-detail">
@@ -692,6 +783,7 @@ export default function ClientOnboarding() {
   const [proposalSigImage, setProposalSigImage] = useState('')
   const [contractSigImage, setContractSigImage] = useState('')
   const [emailError, setEmailError] = useState('')
+  const ownerSigImage = SAVED_SIGNATURE_SRC
 
   const timestamp = () => new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
   const progressIndex = step <= 3 ? step : 3
@@ -702,6 +794,7 @@ export default function ClientOnboarding() {
     contractSignedAt,
     proposalSigImage,
     contractSigImage,
+    ownerSigImage,
     plan: getPlan(signedData.retainer),
   }
 
@@ -726,6 +819,8 @@ export default function ClientOnboarding() {
       <div className="app">
         {step === 1 && (
           <ProposalStep
+            defaultName={proposalName}
+            previewSignatureImage={proposalSigImage}
             onSigned={(name, signatureImage) => {
               setProposalName(name)
               setProposalSigImage(signatureImage)
@@ -738,9 +833,10 @@ export default function ClientOnboarding() {
         {step === 2 && (
           <AgreementStep
             proposalName={proposalName}
-            onSigned={(data) => {
+            previewSignatureImage={proposalSigImage}
+            onContinue={(data) => {
               setSignedData(data)
-              setContractSigImage(data.contractSigImage || '')
+              setContractSigImage(proposalSigImage)
               setContractSignedAt(timestamp())
               setStep(3)
             }}
@@ -752,10 +848,13 @@ export default function ClientOnboarding() {
             signedData={signedData}
             onPaid={async (retainer) => {
               const plan = getPlan(retainer)
+
               setSignedData((current) => ({ ...current, retainer }))
               setEmailError('')
 
               try {
+                const ownerSigDataUrl = await toDataUrl(SAVED_SIGNATURE_SRC)
+
                 await sendEmail({
                   clientName: proposalName,
                   retainer,
@@ -764,6 +863,7 @@ export default function ClientOnboarding() {
                   paymentAmount: plan.dueToday.toFixed(2),
                   proposalSigImage,
                   contractSigImage,
+                  ownerSigImage: ownerSigDataUrl,
                   planLabel: plan.shortLabel,
                   planDetail: plan.detail,
                   planCoverageLine: plan.coverage,

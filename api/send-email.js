@@ -1,6 +1,8 @@
 // Vercel Serverless Function
 
 const VALID_RETAINERS = new Set(['none', 'monthly', 'annual'])
+const OWNER_NAME = 'Caleb Hingos'
+const COMPANY_NAME = 'Vivid Acuity, LLC'
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (char) => {
@@ -9,10 +11,15 @@ function escapeHtml(value) {
   })
 }
 
-function extractBase64(dataUrl) {
+function extractInlineImage(dataUrl) {
   if (typeof dataUrl !== 'string') return null
-  const match = dataUrl.match(/^data:image\/png;base64,(.+)$/)
-  return match ? match[1] : null
+  const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/)
+  if (!match) return null
+
+  const [, contentType, content] = match
+  const extension = contentType === 'image/svg+xml' ? 'svg' : contentType.split('/')[1]
+
+  return { contentType, content, extension }
 }
 
 function buildSigHtml(cidName) {
@@ -46,16 +53,17 @@ const S = {
   sigDate: 'font-size:11px;color:#999;margin-top:2px;',
 }
 
-function buildProposalHtml({ safeClientName, safeProposalSignedAt, now, proposalSigCid }) {
-  const sigHtml = buildSigHtml(proposalSigCid)
+function buildProposalHtml({ safeClientName, safeProposalSignedAt, now, proposalSigCid, ownerSigCid }) {
+  const clientSigHtml = buildSigHtml(proposalSigCid)
+  const ownerSigHtml = buildSigHtml(ownerSigCid)
   return `<div style="${S.body}">
-  <div style="${S.coName}">Vivid Acuity, LLC</div>
+  <div style="${S.coName}">${COMPANY_NAME}</div>
   <h1 style="${S.h1}">Project Proposal</h1>
   <div style="${S.subtitle}">Prepared for ${safeClientName} / Top View Taxidermy &mdash; ${now}</div>
 
   <div style="${S.row}"><div style="${S.label}">Client</div><div style="${S.value}">${safeClientName}</div></div>
   <div style="${S.row}"><div style="${S.label}">Business</div><div style="${S.value}">Top View Taxidermy, Kenosha WI</div></div>
-  <div style="${S.row}"><div style="${S.label}">Proposal Signed</div><div style="${S.signed}">&#10003; ${safeProposalSignedAt}</div></div>
+  <div style="${S.row}"><div style="${S.label}">Proposal Finalized</div><div style="${S.signed}">&#10003; ${safeProposalSignedAt}</div></div>
 
   <div style="${S.sectionTitle}">Deliverables</div>
 
@@ -94,30 +102,32 @@ function buildProposalHtml({ safeClientName, safeProposalSignedAt, now, proposal
 
   <div style="${S.guarantee}"><strong style="color:#2a7a5a;">100% Satisfaction Guarantee:</strong> If the client is not fully satisfied with the completed website and logo within 3 months of launch, Vivid Acuity, LLC will issue a full refund of all fees paid. This guarantee is void if the client has materially altered the delivered work.</div>
 
-  <div style="${S.sigBlock}">
-    <div style="${S.sigLabel}">Client Signature</div>
-    ${sigHtml}
-    <div style="${S.sigName}">${safeClientName}</div>
-    <div style="${S.sigDate}">Signed ${safeProposalSignedAt}</div>
-  </div>
-
-  <div style="${S.sigBlock}">
-    <div style="${S.sigLabel}">Vivid Acuity, LLC</div>
-    <div style="border-bottom:1.5px solid #1a1a1a;height:40px;margin:8px 0 4px;"></div>
-    <div style="${S.sigName}">Caleb Hingos &mdash; Vivid Acuity, LLC</div>
-    <div style="${S.sigDate}">${now}</div>
+  <div style="display:flex;gap:36px;flex-wrap:wrap;margin-top:28px;padding-top:16px;border-top:1px solid #eee;">
+    <div style="flex:1;min-width:220px;">
+      <div style="${S.sigLabel}">Client</div>
+      ${clientSigHtml}
+      <div style="${S.sigName}">${safeClientName}</div>
+      <div style="${S.sigDate}">Signed ${safeProposalSignedAt}</div>
+    </div>
+    <div style="flex:1;min-width:220px;">
+      <div style="${S.sigLabel}">${COMPANY_NAME}</div>
+      ${ownerSigHtml}
+      <div style="${S.sigName}">${OWNER_NAME} &mdash; ${COMPANY_NAME}</div>
+      <div style="${S.sigDate}">Applied automatically after payment on ${safeProposalSignedAt}</div>
+    </div>
   </div>
 </div>`
 }
 
-function buildAgreementHtml({ safeClientName, safeContractSignedAt, retainerLabel, formattedPaymentAmount, effectiveDate, now, contractSigCid }) {
-  const sigHtml = buildSigHtml(contractSigCid)
+function buildAgreementHtml({ safeClientName, safeContractSignedAt, retainerLabel, formattedPaymentAmount, effectiveDate, now, contractSigCid, ownerSigCid }) {
+  const clientSigHtml = buildSigHtml(contractSigCid)
+  const ownerSigHtml = buildSigHtml(ownerSigCid)
   return `<div style="${S.body}">
-  <div style="${S.coName}">Vivid Acuity, LLC</div>
+  <div style="${S.coName}">${COMPANY_NAME}</div>
   <h1 style="${S.h1}">Service Agreement</h1>
   <div style="${S.subtitle}">Top View Taxidermy &mdash; ${safeClientName} &mdash; ${now}</div>
 
-  <div style="${S.row}"><div style="${S.label}">Agreement Signed</div><div style="${S.signed}">&#10003; ${safeContractSignedAt}</div></div>
+  <div style="${S.row}"><div style="${S.label}">Agreement Finalized</div><div style="${S.signed}">&#10003; ${safeContractSignedAt}</div></div>
   <div style="${S.row}"><div style="${S.label}">Effective Date</div><div style="${S.value}">${effectiveDate}</div></div>
   <div style="${S.row}"><div style="${S.label}">Retainer Selected</div><div style="${S.value}">${retainerLabel}</div></div>
   <div style="${S.row}"><div style="${S.label}">Payment</div><div style="${S.price}">${formattedPaymentAmount}</div></div>
@@ -139,17 +149,17 @@ function buildAgreementHtml({ safeClientName, safeContractSignedAt, retainerLabe
   </div>
 
   <div style="${S.sigBlock}">
-    <div style="${S.sigLabel}">Client Signature</div>
-    ${sigHtml}
+    <div style="${S.sigLabel}">Client</div>
+    ${clientSigHtml}
     <div style="${S.sigName}">${safeClientName} &mdash; Top View Taxidermy</div>
     <div style="${S.sigDate}">Signed ${safeContractSignedAt}</div>
   </div>
 
   <div style="${S.sigBlock}">
-    <div style="${S.sigLabel}">Vivid Acuity, LLC</div>
-    <div style="border-bottom:1.5px solid #1a1a1a;height:40px;margin:8px 0 4px;"></div>
-    <div style="${S.sigName}">Caleb Hingos &mdash; Vivid Acuity, LLC</div>
-    <div style="${S.sigDate}">${now}</div>
+    <div style="${S.sigLabel}">${COMPANY_NAME}</div>
+    ${ownerSigHtml}
+    <div style="${S.sigName}">${OWNER_NAME} &mdash; ${COMPANY_NAME}</div>
+    <div style="${S.sigDate}">Applied automatically after payment on ${safeContractSignedAt}</div>
   </div>
 </div>`
 }
@@ -162,7 +172,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { clientName, retainer, proposalSignedAt, contractSignedAt, paymentAmount, proposalSigImage, contractSigImage } = req.body;
+  const { clientName, retainer, proposalSignedAt, contractSignedAt, paymentAmount, proposalSigImage, contractSigImage, ownerSigImage } = req.body;
 
   const resendApiKey = process.env.RESEND_API_KEY;
   const normalizedClientName = typeof clientName === 'string' ? clientName.trim() : '';
@@ -184,36 +194,56 @@ export default async function handler(req, res) {
   const safeProposalSignedAt = escapeHtml(normalizedProposalSignedAt);
   const safeContractSignedAt = escapeHtml(normalizedContractSignedAt);
 
-  const proposalSigBase64 = extractBase64(proposalSigImage);
-  const contractSigBase64 = extractBase64(contractSigImage);
+  const proposalSigAsset = extractInlineImage(proposalSigImage);
+  const contractSigAsset = extractInlineImage(contractSigImage);
+  const ownerSigAsset = extractInlineImage(ownerSigImage);
 
   // Build Email 1: Signed Proposal
   const proposalAttachments = [];
-  const proposalSigCid = proposalSigBase64 ? 'proposal-signature' : null;
-  if (proposalSigBase64) {
+  const proposalSigCid = proposalSigAsset ? 'proposal-signature' : null;
+  const ownerSigCid = ownerSigAsset ? 'owner-signature' : null;
+  if (proposalSigAsset) {
     proposalAttachments.push({
-      filename: 'proposal-signature.png',
-      content: proposalSigBase64,
-      content_type: 'image/png',
+      filename: `proposal-signature.${proposalSigAsset.extension}`,
+      content: proposalSigAsset.content,
+      content_type: proposalSigAsset.contentType,
       disposition: 'inline',
       content_id: 'proposal-signature',
     });
   }
-  const proposalHtml = buildProposalHtml({ safeClientName, safeProposalSignedAt, now, proposalSigCid });
+  if (ownerSigAsset) {
+    proposalAttachments.push({
+      filename: `owner-signature.${ownerSigAsset.extension}`,
+      content: ownerSigAsset.content,
+      content_type: ownerSigAsset.contentType,
+      disposition: 'inline',
+      content_id: 'owner-signature',
+    });
+  }
+  const proposalHtml = buildProposalHtml({ safeClientName, safeProposalSignedAt, now, proposalSigCid, ownerSigCid });
 
   // Build Email 2: Signed Agreement
   const agreementAttachments = [];
-  const contractSigCid = contractSigBase64 ? 'contract-signature' : null;
-  if (contractSigBase64) {
+  const contractSigCid = contractSigAsset ? 'contract-signature' : null;
+  if (contractSigAsset) {
     agreementAttachments.push({
-      filename: 'contract-signature.png',
-      content: contractSigBase64,
-      content_type: 'image/png',
+      filename: `contract-signature.${contractSigAsset.extension}`,
+      content: contractSigAsset.content,
+      content_type: contractSigAsset.contentType,
       disposition: 'inline',
       content_id: 'contract-signature',
     });
   }
-  const agreementHtml = buildAgreementHtml({ safeClientName, safeContractSignedAt, retainerLabel, formattedPaymentAmount, effectiveDate, now, contractSigCid });
+  if (ownerSigAsset) {
+    agreementAttachments.push({
+      filename: `owner-signature.${ownerSigAsset.extension}`,
+      content: ownerSigAsset.content,
+      content_type: ownerSigAsset.contentType,
+      disposition: 'inline',
+      content_id: 'owner-signature',
+    });
+  }
+  const agreementHtml = buildAgreementHtml({ safeClientName, safeContractSignedAt, retainerLabel, formattedPaymentAmount, effectiveDate, now, contractSigCid, ownerSigCid });
 
   try {
     const headers = { 'Authorization': `Bearer ${resendApiKey}`, 'Content-Type': 'application/json' };
