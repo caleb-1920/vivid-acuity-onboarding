@@ -3,17 +3,17 @@ const VALID_RETAINERS = new Set(['none', 'monthly', 'annual'])
 const PLAN_DETAILS = {
   none: {
     shortLabel: 'No Maintenance',
-    detail: '$500 due today for the completed logo and website project.',
+    detail: '$512 due today for the completed logo and website project, including the domain cost.',
     coverage: 'Project delivery only with no ongoing maintenance coverage.',
   },
   monthly: {
     shortLabel: 'Monthly - $30/mo',
-    detail: '$500 due today. Monthly maintenance of $30 begins May 1, 2026.',
+    detail: '$512 due today, including the domain cost. Monthly maintenance of $30 begins May 1, 2026.',
     coverage: 'Month-to-month maintenance begins May 1, 2026.',
   },
   annual: {
     shortLabel: 'Annual - $300/yr',
-    detail: '$800 due today: $500 project fee plus $300 annual maintenance.',
+    detail: '$812 due today: $512 project fee, including the domain cost, plus $300 annual maintenance.',
     coverage: 'Coverage runs from May 1, 2026 through May 1, 2027.',
   },
 }

@@ -18,9 +18,22 @@ function buildLineItems(retainer) {
     quantity: 1,
   }
 
+  const domainCostItem = {
+    price_data: {
+      currency: 'usd',
+      product_data: {
+        name: 'Top View Taxidermy domain cost',
+        description: 'Annual domain registration cost paid at project completion.',
+      },
+      unit_amount: 1200,
+    },
+    quantity: 1,
+  }
+
   if (retainer === 'annual') {
     return [
       projectFeeItem,
+      domainCostItem,
       {
         price_data: {
           currency: 'usd',
@@ -38,6 +51,7 @@ function buildLineItems(retainer) {
   if (retainer === 'monthly') {
     return [
       projectFeeItem,
+      domainCostItem,
       {
         price_data: {
           currency: 'usd',
@@ -53,7 +67,7 @@ function buildLineItems(retainer) {
     ]
   }
 
-  return [projectFeeItem]
+  return [projectFeeItem, domainCostItem]
 }
 
 function getMode(retainer) {
@@ -64,18 +78,13 @@ function buildParams({ origin, clientName, retainer, proposalSignedAt, contractS
   const params = new URLSearchParams()
   const mode = getMode(retainer)
   params.set('mode', mode)
-  params.set('success_url', `${origin}/?checkout=success&session_id={CHECKOUT_SESSION_ID}`)
-  params.set('cancel_url', `${origin}/?canceled=1`)
-  params.set('billing_address_collection', 'auto')
+  params.set('ui_mode', 'custom')
+  params.set('return_url', `${origin}/?checkout=success&session_id={CHECKOUT_SESSION_ID}`)
   params.set('payment_method_types[0]', 'card')
   params.set('metadata[clientName]', clientName)
   params.set('metadata[retainer]', retainer)
   params.set('metadata[proposalSignedAt]', proposalSignedAt)
   params.set('metadata[contractSignedAt]', contractSignedAt)
-
-  if (mode === 'payment') {
-    params.set('customer_creation', 'always')
-  }
 
   if (retainer === 'monthly') {
     const trialEnd = Math.floor(new Date(MONTHLY_START_AT).getTime() / 1000)
@@ -153,7 +162,7 @@ export default async function handler(req, res) {
       })
     }
 
-    return json(res, 200, { id: data.id, url: data.url })
+    return json(res, 200, { id: data.id, clientSecret: data.client_secret })
   } catch (error) {
     return json(res, 500, { error: error.message || 'Unable to reach Stripe.' })
   }

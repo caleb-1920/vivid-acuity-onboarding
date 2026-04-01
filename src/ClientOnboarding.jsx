@@ -1,11 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
+import { loadStripe } from '@stripe/stripe-js'
+import {
+  CheckoutElementsProvider,
+  PaymentElement as CheckoutPaymentElement,
+  useCheckout,
+} from '@stripe/react-stripe-js/checkout'
 import './ClientOnboarding.css'
+
+const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY)
 
 const CLIENT_NAME = 'Craig Reindl'
 const BUSINESS_NAME = 'Top View Taxidermy'
 const OWNER_NAME = 'Caleb Hingos'
 const COMPANY_NAME = 'Vivid Acuity, LLC'
 const SAVED_SIGNATURE_SRC = '/signature.png?v=1'
+const DEFAULT_CUSTOMER_EMAIL = 'pineapple.906.pistachio@gmail.com'
 const STORAGE_KEY = 'vivid-acuity-onboarding-state'
 const FINALIZED_SESSION_PREFIX = 'vivid-acuity-finalized-session:'
 const PENDING_SESSION_KEY = 'vivid-acuity-pending-session'
@@ -72,7 +81,7 @@ const CONTRACT_SECTIONS = [
   {
     title: '3. Project Fees',
     content:
-      'Setup Fee: $100. Custom Logo Design: $150. Website Design and Development: $250. One-time project total: $500, due upon signing this agreement.',
+      'Setup Fee: $100. Custom Logo Design: $150. Website Design and Development: $250. Domain Cost: $12. One-time project total: $512, due upon signing this agreement.',
   },
   {
     title: '4. Ongoing Maintenance',
@@ -117,8 +126,8 @@ const PLAN_OPTIONS = [
     sub: 'No maintenance plan selected',
     shortLabel: 'No Maintenance',
     displayPrice: '$0',
-    dueToday: 500,
-    detail: '$500 due today for the completed logo and website project.',
+    dueToday: 512,
+    detail: '$512 due today for the completed logo and website project, including the domain cost.',
     followUp: 'No recurring maintenance charges will be scheduled.',
     coverage: 'Project delivery only with no ongoing maintenance coverage.',
   },
@@ -128,8 +137,8 @@ const PLAN_OPTIONS = [
     sub: 'First charge May 1, 2026',
     shortLabel: 'Monthly - $30/mo',
     displayPrice: '$30/mo',
-    dueToday: 500,
-    detail: '$500 due today. Monthly maintenance of $30 begins May 1, 2026.',
+    dueToday: 512,
+    detail: '$512 due today, including the domain cost. Monthly maintenance of $30 begins May 1, 2026.',
     followUp: '$30/month starts May 1, 2026.',
     coverage: 'Month-to-month maintenance begins May 1, 2026.',
   },
@@ -139,8 +148,8 @@ const PLAN_OPTIONS = [
     sub: 'Coverage through May 1, 2027',
     shortLabel: 'Annual - $300/yr',
     displayPrice: '$300/yr',
-    dueToday: 800,
-    detail: '$800 due today: $500 project fee plus $300 annual maintenance.',
+    dueToday: 812,
+    detail: '$812 due today: $512 project fee, including the domain cost, plus $300 annual maintenance.',
     followUp: 'Annual maintenance covers May 1, 2026 through May 1, 2027.',
     coverage: 'Coverage runs from May 1, 2026 through May 1, 2027.',
     badge: 'Save $60',
@@ -391,6 +400,8 @@ function openPrintableDocuments(data) {
 function SignatureCanvas({ label, onConfirm, locked, initialName = '', initialSignatureImage = '' }) {
   const canvasRef = useRef(null)
   const isDrawing = useRef(false)
+  const hasSigRef = useRef(Boolean(initialSignatureImage))
+  const signatureImageRef = useRef(initialSignatureImage)
   const [hasSig, setHasSig] = useState(Boolean(initialSignatureImage))
   const [typedName, setTypedName] = useState(initialName)
 
@@ -400,7 +411,12 @@ function SignatureCanvas({ label, onConfirm, locked, initialName = '', initialSi
 
     const ctx = canvas.getContext('2d')
 
-    const drawSavedSignature = (signatureImage) => {
+    const syncHasSig = (nextHasSig) => {
+      hasSigRef.current = nextHasSig
+      setHasSig(nextHasSig)
+    }
+
+    const drawSignatureImage = (signatureImage) => {
       if (!signatureImage) return
 
       const image = new Image()
@@ -416,12 +432,19 @@ function SignatureCanvas({ label, onConfirm, locked, initialName = '', initialSi
 
         ctx.clearRect(0, 0, canvasWidth, canvasHeight)
         ctx.drawImage(image, drawX, drawY, drawWidth, drawHeight)
-        setHasSig(true)
+        syncHasSig(true)
       }
       image.src = signatureImage
     }
 
     const resize = () => {
+      const existingSignatureImage =
+        hasSigRef.current && canvas.width > 0 && canvas.height > 0
+          ? canvas.toDataURL('image/png')
+          : signatureImageRef.current
+
+      signatureImageRef.current = existingSignatureImage || ''
+
       const rect = canvas.getBoundingClientRect()
       const dpr = window.devicePixelRatio || 1
       canvas.width = rect.width * dpr
@@ -433,8 +456,10 @@ function SignatureCanvas({ label, onConfirm, locked, initialName = '', initialSi
       ctx.lineCap = 'round'
       ctx.lineJoin = 'round'
 
-      if (initialSignatureImage) {
-        drawSavedSignature(initialSignatureImage)
+      if (signatureImageRef.current) {
+        drawSignatureImage(signatureImageRef.current)
+      } else {
+        syncHasSig(false)
       }
     }
 
@@ -458,10 +483,13 @@ function SignatureCanvas({ label, onConfirm, locked, initialName = '', initialSi
       const { x, y } = getPos(event)
       ctx.lineTo(x, y)
       ctx.stroke()
-      setHasSig(true)
+      syncHasSig(true)
     }
 
     const up = () => {
+      if (isDrawing.current && canvas.width > 0 && canvas.height > 0) {
+        signatureImageRef.current = canvas.toDataURL('image/png')
+      }
       isDrawing.current = false
     }
 
@@ -492,6 +520,8 @@ function SignatureCanvas({ label, onConfirm, locked, initialName = '', initialSi
     if (!canvas) return
     const ctx = canvas.getContext('2d')
     ctx.clearRect(0, 0, canvas.width, canvas.height)
+    signatureImageRef.current = ''
+    hasSigRef.current = false
     setHasSig(false)
   }
 
@@ -501,9 +531,12 @@ function SignatureCanvas({ label, onConfirm, locked, initialName = '', initialSi
     <div className="sig-wrap">
       <span className="sig-label">{label}</span>
       <canvas ref={canvasRef} className={`sig-canvas ${hasSig ? 'has-sig' : ''}`} />
-      <button className="sig-clear" type="button" onClick={clear}>
-        Clear
-      </button>
+      <div className="sig-actions">
+        <div className="sig-hint">Need to redraw it? Clear the signature box and sign again.</div>
+        <button className="sig-clear" type="button" onClick={clear} disabled={!hasSig || locked}>
+          Clear Signature
+        </button>
+      </div>
       <input
         className="sig-name-input"
         placeholder="Type your full name to confirm"
@@ -629,7 +662,8 @@ function ProposalStep({ onSigned, defaultName, previewSignatureImage }) {
             <tr><td>Setup Fee</td><td>$100</td></tr>
             <tr><td>Custom Logo Design</td><td>$150</td></tr>
             <tr><td>Website Design and Development</td><td>$250</td></tr>
-            <tr><td><strong>One-Time Total</strong></td><td><strong>$500</strong></td></tr>
+            <tr><td>Domain Cost</td><td>$12</td></tr>
+            <tr><td><strong>One-Time Total</strong></td><td><strong>$512</strong></td></tr>
           </tbody>
         </table>
       </div>
@@ -752,34 +786,142 @@ function AgreementStep({ proposalName, onContinue, previewSignatureImage, initia
   )
 }
 
-function PaymentStep({ proposalName, signedData, proposalSignedAt, contractSignedAt, onCancel }) {
+function CardOnlyCheckoutForm({ email, onEmailChange, amount }) {
+  const checkoutState = useCheckout()
+  const [submitting, setSubmitting] = useState(false)
+  const [formError, setFormError] = useState('')
+
+  const handleSubmit = async (event) => {
+    event.preventDefault()
+
+    if (checkoutState.type !== 'success') return
+
+    const customerEmail = email.trim()
+    if (!customerEmail) {
+      setFormError('Customer email is required to complete the Stripe payment.')
+      return
+    }
+
+    setSubmitting(true)
+    setFormError('')
+
+    try {
+      const emailResult = await checkoutState.checkout.updateEmail(customerEmail)
+      if (emailResult.type === 'error') {
+        setFormError(emailResult.error.message || 'Enter a valid customer email.')
+        return
+      }
+
+      const confirmResult = await checkoutState.checkout.confirm({
+        email: customerEmail,
+        paymentMethod: 'card',
+        redirect: 'if_required',
+      })
+
+      if (confirmResult.type === 'error') {
+        setFormError(confirmResult.error.message || 'Payment could not be completed.')
+        return
+      }
+
+      window.location.assign(`/?checkout=success&session_id=${encodeURIComponent(confirmResult.session.id)}`)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (checkoutState.type === 'loading') {
+    return <p className="section-lead" style={{ textAlign: 'center' }}>Preparing secure card form...</p>
+  }
+
+  if (checkoutState.type === 'error') {
+    return <p className="payment-error">{checkoutState.error.message || 'Unable to load the card form.'}</p>
+  }
+
+  return (
+    <form className="payment-form-shell" onSubmit={handleSubmit}>
+      <label className="payment-field">
+        <span className="sig-label">Customer Email</span>
+        <input
+          className="sig-name-input"
+          type="text"
+          inputMode="email"
+          autoComplete="off"
+          spellCheck="false"
+          placeholder="customer@example.com"
+          value={email}
+          onChange={(event) => onEmailChange(event.target.value)}
+        />
+      </label>
+
+      <div className="embedded-checkout-wrapper payment-element-shell">
+        <CheckoutPaymentElement
+          options={{
+            layout: 'tabs',
+            paymentMethodOrder: ['card'],
+            wallets: {
+              applePay: 'never',
+              googlePay: 'never',
+              link: 'never',
+            },
+            fields: {
+              billingDetails: {
+                email: 'never',
+                phone: 'never',
+                address: 'if_required',
+              },
+            },
+          }}
+        />
+      </div>
+
+      {formError && <p className="payment-error">{formError}</p>}
+
+      <button className="btn-primary payment-submit-btn" type="submit" disabled={submitting}>
+        {submitting ? 'Processing Payment...' : 'Pay Now'}
+      </button>
+    </form>
+  )
+}
+
+function PaymentStep({ proposalName, signedData, proposalSignedAt, contractSignedAt }) {
   const initialPlan = signedData?.retainer || 'none'
   const [retainer, setRetainer] = useState(initialPlan)
   const [editing, setEditing] = useState(false)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [clientSecret, setClientSecret] = useState('')
+  const [customerEmail, setCustomerEmail] = useState(DEFAULT_CUSTOMER_EMAIL)
 
   const plan = getPlan(retainer)
 
-  const handleSubmit = async () => {
-    setLoading(true)
-    setError('')
+  useEffect(() => {
+    let active = true
 
-    try {
-      const { url } = await createCheckoutSession({
-        clientName: proposalName,
-        retainer,
-        proposalSignedAt,
-        contractSignedAt,
-      })
+    const initCheckout = async () => {
+      setLoading(true)
+      setError('')
+      setClientSecret('')
 
-      window.location.assign(url)
-    } catch (err) {
-      setError(err.message || 'Payment setup failed.')
-    } finally {
-      setLoading(false)
+      try {
+        const { clientSecret: secret } = await createCheckoutSession({
+          clientName: proposalName,
+          retainer,
+          proposalSignedAt,
+          contractSignedAt,
+        })
+
+        if (active) setClientSecret(secret)
+      } catch (err) {
+        if (active) setError(err.message || 'Payment setup failed.')
+      } finally {
+        if (active) setLoading(false)
+      }
     }
-  }
+
+    initCheckout()
+
+    return () => { active = false }
+  }, [retainer, proposalName, proposalSignedAt, contractSignedAt])
 
   return (
     <div className="fade-up">
@@ -788,9 +930,8 @@ function PaymentStep({ proposalName, signedData, proposalSignedAt, contractSigne
       <div className="section-eyebrow">Step 3 of 3</div>
       <div className="section-title">Payment</div>
       <p className="section-lead">
-        Review the selected plan, update it if needed, and complete payment in Stripe Checkout.
-        Once payment succeeds, your saved Vivid Acuity signature is applied to both
-        documents automatically.
+        Review the selected plan, update it if needed, and complete payment below with a
+        card-only form. Link and saved-card autofill are disabled in this step.
       </p>
 
       <div className="summary-shell">
@@ -806,7 +947,7 @@ function PaymentStep({ proposalName, signedData, proposalSignedAt, contractSigne
 
         {editing && (
           <div className="summary-editor">
-            <MaintenancePlanSelector value={retainer} onSelect={setRetainer} />
+            <MaintenancePlanSelector value={retainer} onSelect={(val) => { setClientSecret(''); setRetainer(val) }} />
             <button type="button" className="btn-primary" onClick={() => setEditing(false)}>
               Done - Confirm Plan
             </button>
@@ -819,6 +960,14 @@ function PaymentStep({ proposalName, signedData, proposalSignedAt, contractSigne
             <div className="line-item-copy">Logo + website build, paid once.</div>
           </div>
           <div className="line-item-amount">$500</div>
+        </div>
+
+        <div className="line-item">
+          <div>
+            <div className="line-item-title">Domain Cost</div>
+            <div className="line-item-copy">Annual domain registration paid today.</div>
+          </div>
+          <div className="line-item-amount">$12</div>
         </div>
 
         {retainer === 'annual' && (
@@ -852,17 +1001,78 @@ function PaymentStep({ proposalName, signedData, proposalSignedAt, contractSigne
 
       {error && <p className="payment-error">{error}</p>}
 
-      <StepActions
-        onPrimary={handleSubmit}
-        primaryDisabled={loading}
-        primaryLabel={loading ? 'Redirecting...' : `Pay ${formatMoney(plan.dueToday)} in Stripe`}
-      />
+      {loading && <p className="section-lead" style={{ textAlign: 'center' }}>Loading checkout...</p>}
+
+      {clientSecret && (
+        <CheckoutElementsProvider
+          key={clientSecret}
+          stripe={stripePromise}
+          options={{
+            clientSecret,
+            defaultValues: {
+              email: DEFAULT_CUSTOMER_EMAIL,
+            },
+            elementsOptions: {
+              appearance: {
+                theme: 'night',
+                inputs: 'spaced',
+                labels: 'above',
+                variables: {
+                  colorPrimary: '#f2f2f2',
+                  colorBackground: '#0b0b0b',
+                  colorText: '#f5f5f5',
+                  colorDanger: '#ff7b7b',
+                  fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                  fontSizeBase: '16px',
+                  spacingUnit: '4px',
+                  borderRadius: '12px',
+                },
+                rules: {
+                  '.Input': {
+                    backgroundColor: '#0b0b0b',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    boxShadow: 'none',
+                    color: '#f5f5f5',
+                  },
+                  '.Input:focus': {
+                    border: '1px solid rgba(255,255,255,0.28)',
+                    boxShadow: 'none',
+                  },
+                  '.Label': {
+                    color: '#f5f5f5',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    marginBottom: '8px',
+                  },
+                  '.Tab': {
+                    display: 'none',
+                  },
+                  '.Block': {
+                    backgroundColor: '#141414',
+                    border: '0',
+                    boxShadow: 'none',
+                  },
+                },
+              },
+              savedPaymentMethod: {
+                enableSave: 'never',
+                enableRedisplay: 'never',
+              },
+            },
+          }}
+        >
+          <CardOnlyCheckoutForm
+            email={customerEmail}
+            onEmailChange={setCustomerEmail}
+            amount={plan.dueToday}
+          />
+        </CheckoutElementsProvider>
+      )}
 
       <div className="stripe-note">
         <span>🔒</span>
         <span>
-          Secure Stripe Checkout handles the payment. Monthly maintenance begins on May 1, 2026.
-          {onCancel ? ' Checkout can be canceled and resumed here.' : ''}
+          Secure Stripe card payment handles the charge. Monthly maintenance begins on May 1, 2026.
         </span>
       </div>
     </div>
@@ -894,7 +1104,7 @@ function ThankYouStep({ clientName, plan, onPrint }) {
 export default function ClientOnboarding() {
   const storedState = loadStoredOnboardingState()
   const [step, setStep] = useState(storedState?.step || 1)
-  const [proposalName, setProposalName] = useState(storedState?.proposalName || CLIENT_NAME)
+  const [proposalName, setProposalName] = useState(storedState?.proposalName || '')
   const [signedData, setSignedData] = useState(storedState?.signedData || { retainer: 'none' })
   const [proposalSignedAt, setProposalSignedAt] = useState(storedState?.proposalSignedAt || '')
   const [contractSignedAt, setContractSignedAt] = useState(storedState?.contractSignedAt || '')
@@ -1074,7 +1284,6 @@ export default function ClientOnboarding() {
             signedData={signedData}
             proposalSignedAt={proposalSignedAt}
             contractSignedAt={contractSignedAt}
-            onCancel={Boolean(checkoutStatus)}
           />
         )}
 
