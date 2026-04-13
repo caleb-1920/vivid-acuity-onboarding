@@ -41,7 +41,23 @@ async function parseJsonBody(req) {
   }
 }
 
-function buildLineItems(retainer) {
+function buildLineItems(retainer, customAmount) {
+  if (customAmount !== null) {
+    return [
+      {
+        price_data: {
+          currency: 'usd',
+          product_data: {
+            name: 'Top View Taxidermy project',
+            description: 'Custom payment for Top View Taxidermy logo and website project.',
+          },
+          unit_amount: customAmount * 100,
+        },
+        quantity: 1,
+      },
+    ]
+  }
+
   const projectFeeItem = {
     price_data: {
       currency: 'usd',
@@ -106,13 +122,14 @@ function buildLineItems(retainer) {
   return [projectFeeItem, domainCostItem]
 }
 
-function getMode(retainer) {
+function getMode(retainer, customAmount) {
+  if (customAmount !== null) return 'payment'
   return retainer === 'monthly' ? 'subscription' : 'payment'
 }
 
-function buildParams({ origin, clientName, retainer, proposalSignedAt, contractSignedAt }) {
+function buildParams({ origin, clientName, retainer, customAmount, proposalSignedAt, contractSignedAt }) {
   const params = new URLSearchParams()
-  const mode = getMode(retainer)
+  const mode = getMode(retainer, customAmount)
   params.set('mode', mode)
   params.set('ui_mode', 'custom')
   params.set('return_url', `${origin}/?checkout=success&session_id={CHECKOUT_SESSION_ID}`)
@@ -122,14 +139,14 @@ function buildParams({ origin, clientName, retainer, proposalSignedAt, contractS
   params.set('metadata[proposalSignedAt]', proposalSignedAt)
   params.set('metadata[contractSignedAt]', contractSignedAt)
 
-  if (retainer === 'monthly') {
+  if (retainer === 'monthly' && customAmount === null) {
     const trialEnd = Math.floor(new Date(MONTHLY_START_AT).getTime() / 1000)
     params.set('subscription_data[trial_end]', String(trialEnd))
     params.set('subscription_data[metadata][retainer]', retainer)
     params.set('subscription_data[metadata][clientName]', clientName)
   }
 
-  buildLineItems(retainer).forEach((item, index) => {
+  buildLineItems(retainer, customAmount).forEach((item, index) => {
     params.set(`line_items[${index}][quantity]`, String(item.quantity))
     params.set(`line_items[${index}][price_data][currency]`, item.price_data.currency)
     params.set(`line_items[${index}][price_data][product_data][name]`, item.price_data.product_data.name)
@@ -170,9 +187,16 @@ export default async function handler(req, res) {
     typeof body?.proposalSignedAt === 'string' ? body.proposalSignedAt.trim() : ''
   const contractSignedAt =
     typeof body?.contractSignedAt === 'string' ? body.contractSignedAt.trim() : ''
+  const customAmountRaw = body?.customAmount
+  const customAmount =
+    typeof customAmountRaw === 'number' && Number.isFinite(customAmountRaw) && customAmountRaw > 0
+      ? Math.round(customAmountRaw)
+      : null
 
   if (!clientName) return json(res, 400, { error: 'Client name is required.' })
-  if (!VALID_RETAINERS.has(retainer)) return json(res, 400, { error: 'A valid maintenance plan is required.' })
+  if (customAmount === null && !VALID_RETAINERS.has(retainer)) {
+    return json(res, 400, { error: 'A valid maintenance plan is required.' })
+  }
   if (!proposalSignedAt || !contractSignedAt) {
     return json(res, 400, { error: 'Proposal and agreement signatures are required before payment.' })
   }
@@ -188,7 +212,7 @@ export default async function handler(req, res) {
         Authorization: `Bearer ${stripeSecretKey}`,
         'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: buildParams({ origin, clientName, retainer, proposalSignedAt, contractSignedAt }),
+      body: buildParams({ origin, clientName, retainer: retainer || 'none', customAmount, proposalSignedAt, contractSignedAt }),
     })
 
     const data = await response.json()

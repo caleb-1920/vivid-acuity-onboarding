@@ -932,8 +932,11 @@ function PaymentStep({ proposalName, signedData, proposalSignedAt, contractSigne
   const [error, setError] = useState('')
   const [clientSecret, setClientSecret] = useState('')
   const [customerEmail, setCustomerEmail] = useState(DEFAULT_CUSTOMER_EMAIL)
+  const [customAmount, setCustomAmount] = useState(null)
+  const [customInput, setCustomInput] = useState('')
 
   const plan = getPlan(retainer)
+  const effectiveDueToday = customAmount !== null ? customAmount : plan.dueToday
 
   useEffect(() => {
     let active = true
@@ -955,6 +958,7 @@ function PaymentStep({ proposalName, signedData, proposalSignedAt, contractSigne
         const { clientSecret: secret, livemode } = await createCheckoutSession({
           clientName: proposalName,
           retainer,
+          customAmount,
           proposalSignedAt,
           contractSignedAt,
         })
@@ -985,7 +989,7 @@ function PaymentStep({ proposalName, signedData, proposalSignedAt, contractSigne
     initCheckout()
 
     return () => { active = false }
-  }, [retainer, proposalName, proposalSignedAt, contractSignedAt])
+  }, [retainer, customAmount, proposalName, proposalSignedAt, contractSignedAt])
 
   return (
     <div className="fade-up">
@@ -1011,56 +1015,90 @@ function PaymentStep({ proposalName, signedData, proposalSignedAt, contractSigne
 
         {editing && (
           <div className="summary-editor">
-            <MaintenancePlanSelector value={retainer} onSelect={(val) => { setClientSecret(''); setRetainer(val) }} />
-            <button type="button" className="btn-primary" onClick={() => setEditing(false)}>
-              Done - Confirm Plan
+            <MaintenancePlanSelector value={retainer} onSelect={(val) => { setClientSecret(''); setRetainer(val); setCustomAmount(null); setCustomInput('') }} />
+            <div className="custom-price-field">
+              <label className="custom-price-label">Or set a custom total due today ($)</label>
+              <div className="custom-price-input-wrap">
+                <span className="custom-price-dollar">$</span>
+                <input
+                  type="number"
+                  className="custom-price-input"
+                  min="1"
+                  step="1"
+                  value={customInput}
+                  onChange={(e) => setCustomInput(e.target.value)}
+                  placeholder={String(effectiveDueToday)}
+                />
+              </div>
+            </div>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => {
+                const parsed = parseInt(customInput, 10)
+                if (!isNaN(parsed) && parsed > 0) {
+                  setClientSecret('')
+                  setCustomAmount(parsed)
+                }
+                setEditing(false)
+              }}
+            >
+              Done - Confirm Price
             </button>
           </div>
         )}
 
-        <div className="line-item">
-          <div>
-            <div className="line-item-title">One-Time Project Fee</div>
-            <div className="line-item-copy">Logo + website build, paid once.</div>
-          </div>
-          <div className="line-item-amount">$500</div>
-        </div>
-
-        <div className="line-item">
-          <div>
-            <div className="line-item-title">Domain Cost</div>
-            <div className="line-item-copy">Annual domain registration paid today.</div>
-          </div>
-          <div className="line-item-amount">$12</div>
-        </div>
-
-        {retainer === 'annual' && (
-          <div className="line-item">
-            <div>
-              <div className="line-item-title">Annual Maintenance</div>
-              <div className="line-item-copy">Coverage from May 1, 2026 through May 1, 2027.</div>
+        {customAmount === null && (
+          <>
+            <div className="line-item">
+              <div>
+                <div className="line-item-title">One-Time Project Fee</div>
+                <div className="line-item-copy">Logo + website build, paid once.</div>
+              </div>
+              <div className="line-item-amount">$500</div>
             </div>
-            <div className="line-item-amount">$300</div>
-          </div>
-        )}
 
-        {retainer === 'monthly' && (
-          <div className="line-item muted-line">
-            <div>
-              <div className="line-item-title">Monthly Maintenance</div>
-              <div className="line-item-copy">$30 begins May 1, 2026 and is not charged today.</div>
+            <div className="line-item">
+              <div>
+                <div className="line-item-title">Domain Cost</div>
+                <div className="line-item-copy">Annual domain registration paid today.</div>
+              </div>
+              <div className="line-item-amount">$12</div>
             </div>
-            <div className="line-item-amount muted-amount">$30/mo</div>
-          </div>
+
+            {retainer === 'annual' && (
+              <div className="line-item">
+                <div>
+                  <div className="line-item-title">Annual Maintenance</div>
+                  <div className="line-item-copy">Coverage from May 1, 2026 through May 1, 2027.</div>
+                </div>
+                <div className="line-item-amount">$300</div>
+              </div>
+            )}
+
+            {retainer === 'monthly' && (
+              <div className="line-item muted-line">
+                <div>
+                  <div className="line-item-title">Monthly Maintenance</div>
+                  <div className="line-item-copy">$30 begins May 1, 2026 and is not charged today.</div>
+                </div>
+                <div className="line-item-amount muted-amount">$30/mo</div>
+              </div>
+            )}
+          </>
         )}
 
         <div className="due-today-card">
           <div className="due-today-label">Due Today</div>
-          <div className="due-today-amount">{formatMoney(plan.dueToday)}</div>
+          <div className="due-today-amount">{formatMoney(effectiveDueToday)}</div>
         </div>
 
-        <div className="payment-note">{plan.detail}</div>
-        <div className="payment-note">{plan.followUp}</div>
+        {customAmount === null && (
+          <>
+            <div className="payment-note">{plan.detail}</div>
+            <div className="payment-note">{plan.followUp}</div>
+          </>
+        )}
       </div>
 
       {error && <p className="payment-error">{error}</p>}
@@ -1128,7 +1166,7 @@ function PaymentStep({ proposalName, signedData, proposalSignedAt, contractSigne
           <CardOnlyCheckoutForm
             email={customerEmail}
             onEmailChange={setCustomerEmail}
-            amount={plan.dueToday}
+            amount={effectiveDueToday}
           />
         </CheckoutElementsProvider>
       )}
