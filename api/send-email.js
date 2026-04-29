@@ -1,60 +1,57 @@
-// Vercel Serverless Function
+// Vercel Serverless Function — sends signed proposal + agreement to client + owner.
 
-const VALID_RETAINERS = new Set(['none', 'monthly', 'annual'])
+import { requireAdmin } from './_auth.js'
+
 const OWNER_NAME = 'Caleb Hingos'
 const COMPANY_NAME = 'Vivid Acuity, LLC'
+const OWNER_EMAIL = 'caleb@vividacuity.com'
+const FROM_ADDRESS = process.env.RESEND_FROM_ADDRESS || 'Vivid Acuity <onboarding@resend.dev>'
 
-const MAX_BODY_BYTES = 2 * 1024 * 1024 // 2 MB
+const MAX_BODY_BYTES = 4 * 1024 * 1024 // 4 MB to comfortably hold inline signature data URLs
 
 async function parseJsonBody(req) {
   if (req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)) {
     return req.body
   }
-
   const contentType = (req.headers?.['content-type'] || '').toLowerCase()
-  if (contentType && !contentType.includes('application/json')) {
-    return {}
-  }
+  if (contentType && !contentType.includes('application/json')) return {}
 
   let totalBytes = 0
   const chunks = []
-
   for await (const chunk of req) {
     const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
     totalBytes += buf.length
-    if (totalBytes > MAX_BODY_BYTES) {
-      throw new Error('Request body too large.')
-    }
+    if (totalBytes > MAX_BODY_BYTES) throw new Error('Request body too large.')
     chunks.push(buf)
   }
-
   if (!chunks.length) return {}
-
   const raw = Buffer.concat(chunks).toString('utf8').trim()
   if (!raw) return {}
-
-  try {
-    return JSON.parse(raw)
-  } catch {
-    return {}
-  }
+  try { return JSON.parse(raw) } catch { return {} }
 }
 
 function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (char) => {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => {
     const entities = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
     return entities[char]
   })
+}
+
+function formatMoney(amount) {
+  if (typeof amount !== 'number' || !Number.isFinite(amount)) return '$0'
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+  }).format(amount)
 }
 
 function extractInlineImage(dataUrl) {
   if (typeof dataUrl !== 'string') return null
   const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/)
   if (!match) return null
-
   const [, contentType, content] = match
   const extension = contentType === 'image/svg+xml' ? 'svg' : contentType.split('/')[1]
-
   return { contentType, content, extension }
 }
 
@@ -87,214 +84,300 @@ const S = {
   sigLabel: 'font-family:sans-serif;font-size:11px;color:#A87C4F;text-transform:uppercase;letter-spacing:0.15em;margin-bottom:4px;',
   sigName: 'font-family:sans-serif;font-size:12px;color:#1a1a1a;font-weight:600;',
   sigDate: 'font-size:11px;color:#999;margin-top:2px;',
+  audit: 'margin-top:32px;padding:16px;background:#f7f7f7;border:1px solid #e3e3e3;border-radius:6px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:#555;line-height:1.6;white-space:pre-wrap;word-break:break-word;',
+  auditTitle: 'font-family:sans-serif;font-size:11px;color:#7a7060;letter-spacing:0.15em;text-transform:uppercase;margin-bottom:8px;',
 }
 
-function buildProposalHtml({ safeClientName, safeProposalSignedAt, now, proposalSigCid, ownerSigCid }) {
-  const clientSigHtml = buildSigHtml(proposalSigCid)
-  const ownerSigHtml = buildSigHtml(ownerSigCid)
+function getClientIp(req) {
+  const fwd = req.headers?.['x-forwarded-for']
+  if (typeof fwd === 'string' && fwd) return fwd.split(',')[0].trim()
+  if (Array.isArray(fwd) && fwd.length) return String(fwd[0]).trim()
+  return req.socket?.remoteAddress || ''
+}
+
+function buildAuditBlock({ clientId, stripeSessionId, ip, userAgent, serverTimestamp, proposalSignedAt, contractSignedAt }) {
+  const lines = [
+    `Server timestamp: ${serverTimestamp}`,
+    `Client ID:        ${clientId || '(not provided)'}`,
+    `Stripe session:   ${stripeSessionId || '(not provided)'}`,
+    `Signer IP:        ${ip || '(unknown)'}`,
+    `User-Agent:       ${userAgent || '(unknown)'}`,
+    `Proposal signed:  ${proposalSignedAt || '(unknown)'}`,
+    `Agreement signed: ${contractSignedAt || '(unknown)'}`,
+  ]
+  return `<div style="${S.audit}">
+  <div style="${S.auditTitle}">Audit Trail</div>
+  ${lines.map((line) => escapeHtml(line)).join('<br/>')}
+</div>`
+}
+
+function buildProposalHtml({
+  clientName,
+  businessName,
+  businessLocation,
+  proposalSignedAt,
+  now,
+  proposalSigCid,
+  ownerSigCid,
+  proposalCards,
+  pricingLineItems,
+  projectTotal,
+  satisfactionGuaranteeMonths,
+  auditHtml,
+}) {
+  const safeClientName = escapeHtml(clientName)
+  const safeBusiness = escapeHtml(businessName)
+  const safeLocation = escapeHtml(businessLocation || '')
+  const safeProposalSignedAt = escapeHtml(proposalSignedAt)
+  const safeNow = escapeHtml(now)
+  const guaranteeMonths = Number.isFinite(satisfactionGuaranteeMonths) ? satisfactionGuaranteeMonths : 3
+
+  const cardsHtml = (proposalCards || [])
+    .map((card) => {
+      const itemsHtml = (card.items || [])
+        .map((item) => `<div style="${S.cardItem}"><span style="${S.dot}"></span>${escapeHtml(item)}</div>`)
+        .join('')
+      return `<div style="${S.cardTitle}">${escapeHtml(card.icon || '')} ${escapeHtml(card.title || '')}</div>${itemsHtml}`
+    })
+    .join('')
+
+  const pricingRowsHtml = (pricingLineItems || [])
+    .map(
+      (item) =>
+        `<tr><td style="padding:8px 0;font-size:14px;border-bottom:1px solid #f0f0f0;">${escapeHtml(item.label)}</td><td style="padding:8px 0;text-align:right;font-family:sans-serif;font-weight:500;color:#A87C4F;border-bottom:1px solid #f0f0f0;">${formatMoney(item.amount)}</td></tr>`
+    )
+    .join('')
+
   return `<div style="${S.body}">
-  <div style="${S.coName}">${COMPANY_NAME}</div>
+  <div style="${S.coName}">${escapeHtml(COMPANY_NAME)}</div>
   <h1 style="${S.h1}">Project Proposal</h1>
-  <div style="${S.subtitle}">Prepared for ${safeClientName} / Top View Taxidermy &mdash; ${now}</div>
+  <div style="${S.subtitle}">Prepared for ${safeClientName} / ${safeBusiness} &mdash; ${safeNow}</div>
 
   <div style="${S.row}"><div style="${S.label}">Client</div><div style="${S.value}">${safeClientName}</div></div>
-  <div style="${S.row}"><div style="${S.label}">Business</div><div style="${S.value}">Top View Taxidermy, Kenosha WI</div></div>
+  <div style="${S.row}"><div style="${S.label}">Business</div><div style="${S.value}">${safeBusiness}${safeLocation ? `, ${safeLocation}` : ''}</div></div>
   <div style="${S.row}"><div style="${S.label}">Proposal Finalized</div><div style="${S.signed}">&#10003; ${safeProposalSignedAt}</div></div>
 
   <div style="${S.sectionTitle}">Deliverables</div>
-
-  <div style="${S.cardTitle}">&#127912; Custom Logo Design</div>
-  <div style="${S.cardItem}"><span style="${S.dot}"></span>A brand new logo designed from scratch for Top View Taxidermy.</div>
-  <div style="${S.cardItem}"><span style="${S.dot}"></span>Built to reflect the craft and legacy behind the business.</div>
-  <div style="${S.cardItem}"><span style="${S.dot}"></span>Delivered in every file format needed for web, print, hats, shirts, and more.</div>
-
-  <div style="${S.cardTitle}">&#128187; Website Design and Development</div>
-  <div style="${S.cardItem}"><span style="${S.dot}"></span>A fully custom website built from the ground up with no templates.</div>
-  <div style="${S.cardItem}"><span style="${S.dot}"></span>Responsive across phones, tablets, and desktops.</div>
-  <div style="${S.cardItem}"><span style="${S.dot}"></span>Dark, sharp design with a color palette that fits the brand.</div>
-  <div style="${S.cardItem}"><span style="${S.dot}"></span>Fast-loading and professional throughout.</div>
-
-  <div style="${S.cardTitle}">&#128248; Photo Gallery</div>
-  <div style="${S.cardItem}"><span style="${S.dot}"></span>Photos organized by mount type so visitors can find what they want quickly.</div>
-  <div style="${S.cardItem}"><span style="${S.dot}"></span>Click any photo to open it full screen.</div>
-  <div style="${S.cardItem}"><span style="${S.dot}"></span>All photos professionally edited and color-corrected before going live.</div>
-
-  <div style="${S.cardTitle}">&#128269; Search Engine Setup</div>
-  <div style="${S.cardItem}"><span style="${S.dot}"></span>Built so Google can find it when people search for a taxidermist in Kenosha.</div>
-  <div style="${S.cardItem}"><span style="${S.dot}"></span>Displays correctly on every phone with no awkward zooming.</div>
-
-  <div style="${S.cardTitle}">&#128640; Live on the Web</div>
-  <div style="${S.cardItem}"><span style="${S.dot}"></span>Loads fast so nobody waits.</div>
-  <div style="${S.cardItem}"><span style="${S.dot}"></span>Hosted on a reliable platform that stays online.</div>
-  <div style="${S.cardItem}"><span style="${S.dot}"></span>Delivered clean with no bugs and ready for real visitors from day one.</div>
+  ${cardsHtml}
 
   <div style="${S.sectionTitle}">Investment</div>
   <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
-    <tr><td style="padding:8px 0;font-size:14px;border-bottom:1px solid #f0f0f0;">Setup Fee</td><td style="padding:8px 0;text-align:right;font-family:sans-serif;font-weight:500;color:#A87C4F;border-bottom:1px solid #f0f0f0;">$100</td></tr>
-    <tr><td style="padding:8px 0;font-size:14px;border-bottom:1px solid #f0f0f0;">Custom Logo Design</td><td style="padding:8px 0;text-align:right;font-family:sans-serif;font-weight:500;color:#A87C4F;border-bottom:1px solid #f0f0f0;">$150</td></tr>
-    <tr><td style="padding:8px 0;font-size:14px;border-bottom:1px solid #f0f0f0;">Website Design and Development</td><td style="padding:8px 0;text-align:right;font-family:sans-serif;font-weight:500;color:#A87C4F;border-bottom:1px solid #f0f0f0;">$250</td></tr>
-    <tr><td style="padding:8px 0;font-size:14px;border-bottom:1px solid #f0f0f0;">Domain Cost</td><td style="padding:8px 0;text-align:right;font-family:sans-serif;font-weight:500;color:#A87C4F;border-bottom:1px solid #f0f0f0;">$12</td></tr>
-    <tr style="background:rgba(168,124,79,0.08);"><td style="padding:10px 0;font-size:15px;font-weight:700;"><strong>One-Time Total</strong></td><td style="padding:10px 0;text-align:right;font-family:sans-serif;font-size:18px;font-weight:700;color:#A87C4F;"><strong>$512</strong></td></tr>
+    ${pricingRowsHtml}
+    <tr style="background:rgba(168,124,79,0.08);"><td style="padding:10px 0;font-size:15px;font-weight:700;"><strong>One-Time Total</strong></td><td style="padding:10px 0;text-align:right;font-family:sans-serif;font-size:18px;font-weight:700;color:#A87C4F;"><strong>${formatMoney(projectTotal || 0)}</strong></td></tr>
   </table>
 
-  <div style="${S.guarantee}"><strong style="color:#2a7a5a;">100% Satisfaction Guarantee:</strong> If the client is not fully satisfied with the completed website and logo within 3 months of launch, Vivid Acuity, LLC will issue a full refund of all fees paid. This guarantee is void if the client has materially altered the delivered work.</div>
+  <div style="${S.guarantee}"><strong style="color:#2a7a5a;">100% Satisfaction Guarantee:</strong> If the client is not fully satisfied with the completed work within ${guaranteeMonths} months of launch, ${escapeHtml(COMPANY_NAME)} will issue a full refund of all fees paid. This guarantee is void if the client has materially altered the delivered work.</div>
 
   <div style="display:flex;gap:36px;flex-wrap:wrap;margin-top:28px;padding-top:16px;border-top:1px solid #eee;">
     <div style="flex:1;min-width:220px;">
       <div style="${S.sigLabel}">Client</div>
-      ${clientSigHtml}
+      ${buildSigHtml(proposalSigCid)}
       <div style="${S.sigName}">${safeClientName}</div>
       <div style="${S.sigDate}">Signed ${safeProposalSignedAt}</div>
     </div>
     <div style="flex:1;min-width:220px;">
-      <div style="${S.sigLabel}">${COMPANY_NAME}</div>
-      ${ownerSigHtml}
-      <div style="${S.sigName}">${OWNER_NAME} &mdash; ${COMPANY_NAME}</div>
+      <div style="${S.sigLabel}">${escapeHtml(COMPANY_NAME)}</div>
+      ${buildSigHtml(ownerSigCid)}
+      <div style="${S.sigName}">${escapeHtml(OWNER_NAME)} &mdash; ${escapeHtml(COMPANY_NAME)}</div>
       <div style="${S.sigDate}">Applied automatically after payment on ${safeProposalSignedAt}</div>
     </div>
   </div>
+
+  ${auditHtml}
 </div>`
 }
 
-function buildAgreementHtml({ safeClientName, safeContractSignedAt, retainerLabel, formattedPaymentAmount, effectiveDate, now, contractSigCid, ownerSigCid }) {
-  const clientSigHtml = buildSigHtml(contractSigCid)
-  const ownerSigHtml = buildSigHtml(ownerSigCid)
+function buildAgreementHtml({
+  clientName,
+  businessName,
+  contractSignedAt,
+  planShortLabel,
+  paymentAmount,
+  effectiveDate,
+  now,
+  contractSigCid,
+  ownerSigCid,
+  contractSections,
+  governingState,
+  auditHtml,
+}) {
+  const safeClientName = escapeHtml(clientName)
+  const safeBusiness = escapeHtml(businessName)
+  const safeContractSignedAt = escapeHtml(contractSignedAt)
+  const safePlanShortLabel = escapeHtml(planShortLabel || '')
+  const safePaymentAmount = escapeHtml(paymentAmount)
+  const safeEffective = escapeHtml(effectiveDate)
+  const safeNow = escapeHtml(now)
+  const safeGoverningState = escapeHtml(governingState || 'Michigan')
+
+  const clausesHtml = (contractSections || [])
+    .map(
+      (section) => `
+        <div style="margin-bottom:14px;">
+          <div style="${S.clauseTitle}">${escapeHtml(section.title || '')}</div>
+          <p style="${S.clauseText}">${escapeHtml(section.content || '')}</p>
+        </div>`
+    )
+    .join('')
+
   return `<div style="${S.body}">
-  <div style="${S.coName}">${COMPANY_NAME}</div>
+  <div style="${S.coName}">${escapeHtml(COMPANY_NAME)}</div>
   <h1 style="${S.h1}">Service Agreement</h1>
-  <div style="${S.subtitle}">Top View Taxidermy &mdash; ${safeClientName} &mdash; ${now}</div>
+  <div style="${S.subtitle}">${safeBusiness} &mdash; ${safeClientName} &mdash; ${safeNow}</div>
 
   <div style="${S.row}"><div style="${S.label}">Agreement Finalized</div><div style="${S.signed}">&#10003; ${safeContractSignedAt}</div></div>
-  <div style="${S.row}"><div style="${S.label}">Effective Date</div><div style="${S.value}">${effectiveDate}</div></div>
-  <div style="${S.row}"><div style="${S.label}">Retainer Selected</div><div style="${S.value}">${retainerLabel}</div></div>
-  <div style="${S.row}"><div style="${S.label}">Payment</div><div style="${S.price}">${formattedPaymentAmount}</div></div>
-  <div style="${S.row}"><div style="${S.label}">Governing Law</div><div style="${S.value}">State of Michigan</div></div>
+  <div style="${S.row}"><div style="${S.label}">Effective Date</div><div style="${S.value}">${safeEffective}</div></div>
+  <div style="${S.row}"><div style="${S.label}">Plan Selected</div><div style="${S.value}">${safePlanShortLabel}</div></div>
+  <div style="${S.row}"><div style="${S.label}">Payment</div><div style="${S.price}">${safePaymentAmount}</div></div>
+  <div style="${S.row}"><div style="${S.label}">Governing Law</div><div style="${S.value}">State of ${safeGoverningState}</div></div>
 
   <div style="${S.sectionTitle}">Agreement Terms</div>
   <div style="background:#fafafa;border:1px solid #eee;border-radius:6px;padding:24px;margin-bottom:16px;">
-    <div style="margin-bottom:14px;"><div style="${S.clauseTitle}">1. Parties</div><p style="${S.clauseText}">This Service Agreement is entered into between Caleb Hingos, operating as Vivid Acuity, LLC (caleb@vividacuity.com), Upper Peninsula, Michigan, and Craig Reindl, operating as Top View Taxidermy, Kenosha, Wisconsin.</p></div>
-    <div style="margin-bottom:14px;"><div style="${S.clauseTitle}">2. Scope of Work</div><p style="${S.clauseText}">Vivid Acuity, LLC has completed a custom logo and a fully custom website including responsive design, edited gallery assets, search engine setup, and live deployment.</p></div>
-    <div style="margin-bottom:14px;"><div style="${S.clauseTitle}">3. Project Fees</div><p style="${S.clauseText}">Setup Fee: $100. Custom Logo Design: $150. Website Design and Development: $250. Domain Cost: $12. One-time project total: $512, due upon signing this agreement.</p></div>
-    <div style="margin-bottom:14px;"><div style="${S.clauseTitle}">4. Ongoing Maintenance</div><p style="${S.clauseText}">Optional maintenance may be selected as either $30/month or $300/year. Coverage includes hosting oversight, uptime monitoring, minor content updates, and dependency maintenance.</p></div>
-    <div style="margin-bottom:14px;"><div style="${S.clauseTitle}">5. Payment Terms</div><p style="${S.clauseText}">Full one-time balance is due upon signing. Monthly maintenance begins May 1, 2026 if selected. Annual maintenance covers May 1, 2026 through May 1, 2027 if selected.</p></div>
-    <div style="margin-bottom:14px;"><div style="${S.clauseTitle}">6. Intellectual Property</div><p style="${S.clauseText}">Upon receipt of full payment, all rights to the logo and website transfer fully to Craig Reindl / Top View Taxidermy. Vivid Acuity may still display the work in its portfolio.</p></div>
-    <div style="margin-bottom:14px;"><div style="${S.clauseTitle}">7. Revisions</div><p style="${S.clauseText}">Up to two rounds of revisions are included. Additional revisions are billed at $75/hour and must be requested in writing.</p></div>
-    <div style="margin-bottom:14px;"><div style="${S.clauseTitle}">8. Satisfaction Guarantee</div><p style="${S.clauseText}">If the client is not fully satisfied with the completed website and logo within 3 months of launch, Vivid Acuity, LLC will issue a full refund of all fees paid.</p></div>
-    <div style="margin-bottom:14px;"><div style="${S.clauseTitle}">9. Limitation of Liability</div><p style="${S.clauseText}">Total liability of Vivid Acuity, LLC is limited to the total fees paid under this agreement.</p></div>
-    <div style="margin-bottom:14px;"><div style="${S.clauseTitle}">10. Governing Law</div><p style="${S.clauseText}">This agreement is governed by the laws of the State of Michigan.</p></div>
-    <div><div style="${S.clauseTitle}">Effective Date</div><p style="${S.clauseText}">${effectiveDate}</p></div>
+    ${clausesHtml}
+    <div><div style="${S.clauseTitle}">Effective Date</div><p style="${S.clauseText}">${safeEffective}</p></div>
   </div>
 
   <div style="${S.sigBlock}">
     <div style="${S.sigLabel}">Client</div>
-    ${clientSigHtml}
-    <div style="${S.sigName}">${safeClientName} &mdash; Top View Taxidermy</div>
+    ${buildSigHtml(contractSigCid)}
+    <div style="${S.sigName}">${safeClientName} &mdash; ${safeBusiness}</div>
     <div style="${S.sigDate}">Signed ${safeContractSignedAt}</div>
   </div>
 
   <div style="${S.sigBlock}">
-    <div style="${S.sigLabel}">${COMPANY_NAME}</div>
-    ${ownerSigHtml}
-    <div style="${S.sigName}">${OWNER_NAME} &mdash; ${COMPANY_NAME}</div>
+    <div style="${S.sigLabel}">${escapeHtml(COMPANY_NAME)}</div>
+    ${buildSigHtml(ownerSigCid)}
+    <div style="${S.sigName}">${escapeHtml(OWNER_NAME)} &mdash; ${escapeHtml(COMPANY_NAME)}</div>
     <div style="${S.sigDate}">Applied automatically after payment on ${safeContractSignedAt}</div>
   </div>
+
+  ${auditHtml}
 </div>`
 }
 
-export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-  if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-
-  const body = await parseJsonBody(req);
-  const { clientName, retainer, proposalSignedAt, contractSignedAt, paymentAmount, proposalSigImage, contractSigImage, ownerSigImage } = body;
-
-  const resendApiKey = process.env.RESEND_API_KEY;
-  const normalizedClientName = typeof clientName === 'string' ? clientName.trim() : '';
-  const normalizedProposalSignedAt = typeof proposalSignedAt === 'string' ? proposalSignedAt.trim() : '';
-  const normalizedContractSignedAt = typeof contractSignedAt === 'string' ? contractSignedAt.trim() : '';
-  const numericPaymentAmount = Number(paymentAmount);
-
-  if (!resendApiKey) return res.status(500).json({ error: 'Server email configuration is missing.' });
-  if (!normalizedClientName) return res.status(400).json({ error: 'Client name is required.' });
-  if (!VALID_RETAINERS.has(retainer)) return res.status(400).json({ error: 'A valid retainer plan is required.' });
-  if (!normalizedProposalSignedAt || !normalizedContractSignedAt) return res.status(400).json({ error: 'Proposal and agreement signatures are required.' });
-  if (!Number.isFinite(numericPaymentAmount) || numericPaymentAmount <= 0) return res.status(400).json({ error: 'Payment amount must be greater than 0.' });
-
-  const retainerLabel = retainer === 'monthly' ? '$30/month' : retainer === 'annual' ? '$300/year' : 'None selected';
-  const now = new Date().toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' });
-  const effectiveDate = new Date().toLocaleDateString('en-US', { dateStyle: 'long' });
-  const formattedPaymentAmount = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(numericPaymentAmount);
-  const safeClientName = escapeHtml(normalizedClientName);
-  const safeProposalSignedAt = escapeHtml(normalizedProposalSignedAt);
-  const safeContractSignedAt = escapeHtml(normalizedContractSignedAt);
-
-  const proposalSigAsset = extractInlineImage(proposalSigImage);
-  const contractSigAsset = extractInlineImage(contractSigImage);
-  const ownerSigAsset = extractInlineImage(ownerSigImage);
-
-  // Build Email 1: Signed Proposal
-  const proposalAttachments = [];
-  const proposalSigCid = proposalSigAsset ? 'proposal-signature' : null;
-  const ownerSigCid = ownerSigAsset ? 'owner-signature' : null;
-  if (proposalSigAsset) {
-    proposalAttachments.push({
-      filename: `proposal-signature.${proposalSigAsset.extension}`,
-      content: proposalSigAsset.content,
-      content_type: proposalSigAsset.contentType,
+function buildAttachments(images) {
+  const attachments = []
+  for (const { asset, name } of images) {
+    if (!asset) continue
+    attachments.push({
+      filename: `${name}.${asset.extension}`,
+      content: asset.content,
+      content_type: asset.contentType,
       disposition: 'inline',
-      content_id: 'proposal-signature',
-    });
+      content_id: name,
+    })
   }
-  if (ownerSigAsset) {
-    proposalAttachments.push({
-      filename: `owner-signature.${ownerSigAsset.extension}`,
-      content: ownerSigAsset.content,
-      content_type: ownerSigAsset.contentType,
-      disposition: 'inline',
-      content_id: 'owner-signature',
-    });
-  }
-  const proposalHtml = buildProposalHtml({ safeClientName, safeProposalSignedAt, now, proposalSigCid, ownerSigCid });
+  return attachments
+}
 
-  // Build Email 2: Signed Agreement
-  const agreementAttachments = [];
-  const contractSigCid = contractSigAsset ? 'contract-signature' : null;
-  if (contractSigAsset) {
-    agreementAttachments.push({
-      filename: `contract-signature.${contractSigAsset.extension}`,
-      content: contractSigAsset.content,
-      content_type: contractSigAsset.contentType,
-      disposition: 'inline',
-      content_id: 'contract-signature',
-    });
+export async function sendSignedDocuments(body, req) {
+  const resendApiKey = process.env.RESEND_API_KEY
+  if (!resendApiKey) throw new Error('Server email configuration is missing.')
+
+  const clientId = typeof body.clientId === 'string' ? body.clientId.trim() : ''
+  const clientName = typeof body.clientName === 'string' ? body.clientName.trim() : ''
+  const clientEmail = typeof body.clientEmail === 'string' ? body.clientEmail.trim() : ''
+  const businessName = typeof body.businessName === 'string' ? body.businessName.trim() : ''
+  const businessLocation = typeof body.businessLocation === 'string' ? body.businessLocation.trim() : ''
+  const governingState = typeof body.governingState === 'string' ? body.governingState.trim() : 'Michigan'
+  const planValue = typeof body.planValue === 'string' ? body.planValue.trim() : ''
+  const planShortLabel = typeof body.planShortLabel === 'string' ? body.planShortLabel.trim() : ''
+  const proposalSignedAt = typeof body.proposalSignedAt === 'string' ? body.proposalSignedAt.trim() : ''
+  const contractSignedAt = typeof body.contractSignedAt === 'string' ? body.contractSignedAt.trim() : ''
+  const stripeSessionId = typeof body.stripeSessionId === 'string' ? body.stripeSessionId.trim() : ''
+  const numericPaymentAmount = Number(body.paymentAmount)
+
+  const proposalCards = Array.isArray(body.proposalCards) ? body.proposalCards : []
+  const contractSections = Array.isArray(body.contractSections) ? body.contractSections : []
+  const pricingLineItems = Array.isArray(body.pricingLineItems) ? body.pricingLineItems : []
+  const projectTotal = typeof body.projectTotal === 'number' ? body.projectTotal : 0
+  const satisfactionGuaranteeMonths = typeof body.satisfactionGuaranteeMonths === 'number' ? body.satisfactionGuaranteeMonths : 3
+
+  if (!clientName) throw new Error('clientName is required.')
+  if (!businessName) throw new Error('businessName is required.')
+  if (!proposalSignedAt || !contractSignedAt) {
+    throw new Error('Proposal and agreement signatures are required.')
   }
-  if (ownerSigAsset) {
-    agreementAttachments.push({
-      filename: `owner-signature.${ownerSigAsset.extension}`,
-      content: ownerSigAsset.content,
-      content_type: ownerSigAsset.contentType,
-      disposition: 'inline',
-      content_id: 'owner-signature',
-    });
+  if (!Number.isFinite(numericPaymentAmount) || numericPaymentAmount <= 0) {
+    throw new Error('Payment amount must be greater than 0.')
   }
-  const agreementHtml = buildAgreementHtml({ safeClientName, safeContractSignedAt, retainerLabel, formattedPaymentAmount, effectiveDate, now, contractSigCid, ownerSigCid });
+  if (!planValue) throw new Error('planValue is required.')
+
+  const now = new Date().toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' })
+  const effectiveDate = new Date().toLocaleDateString('en-US', { dateStyle: 'long' })
+  const formattedPaymentAmount = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(numericPaymentAmount)
+
+  const proposalSigAsset = extractInlineImage(body.proposalSigImage)
+  const contractSigAsset = extractInlineImage(body.contractSigImage)
+  const ownerSigAsset = extractInlineImage(body.ownerSigImage)
+  const proposalSigCid = proposalSigAsset ? 'proposal-signature' : null
+  const contractSigCid = contractSigAsset ? 'contract-signature' : null
+  const ownerSigCid = ownerSigAsset ? 'owner-signature' : null
+
+  const auditHtml = buildAuditBlock({
+    clientId,
+    stripeSessionId,
+    ip: getClientIp(req),
+    userAgent: req.headers?.['user-agent'] || '',
+    serverTimestamp: new Date().toISOString(),
+    proposalSignedAt,
+    contractSignedAt,
+  })
+
+  const proposalHtml = buildProposalHtml({
+    clientName,
+    businessName,
+    businessLocation,
+    proposalSignedAt,
+    now,
+    proposalSigCid,
+    ownerSigCid,
+    proposalCards,
+    pricingLineItems,
+    projectTotal,
+    satisfactionGuaranteeMonths,
+    auditHtml,
+  })
+  const proposalAttachments = buildAttachments([
+    { asset: proposalSigAsset, name: 'proposal-signature' },
+    { asset: ownerSigAsset, name: 'owner-signature' },
+  ])
+
+  const agreementHtml = buildAgreementHtml({
+    clientName,
+    businessName,
+    contractSignedAt,
+    planShortLabel,
+    paymentAmount: formattedPaymentAmount,
+    effectiveDate,
+    now,
+    contractSigCid,
+    ownerSigCid,
+    contractSections,
+    governingState,
+    auditHtml,
+  })
+  const agreementAttachments = buildAttachments([
+    { asset: contractSigAsset, name: 'contract-signature' },
+    { asset: ownerSigAsset, name: 'owner-signature' },
+  ])
+
+  const recipients = []
+  if (clientEmail) recipients.push(clientEmail)
+  if (!recipients.includes(OWNER_EMAIL)) recipients.push(OWNER_EMAIL)
 
   try {
-    const headers = { 'Authorization': `Bearer ${resendApiKey}`, 'Content-Type': 'application/json' };
-    const to = ['caleb@vividacuity.com'];
-    const from = 'Vivid Acuity <onboarding@resend.dev>';
+    const headers = { Authorization: `Bearer ${resendApiKey}`, 'Content-Type': 'application/json' }
+    const businessLabel = businessName || clientName
 
     const [proposalRes, agreementRes] = await Promise.all([
       fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          from, to,
-          subject: `Signed Proposal - ${normalizedClientName} / Top View Taxidermy`,
+          from: FROM_ADDRESS,
+          to: recipients,
+          subject: `Signed Proposal - ${clientName} / ${businessLabel}`,
           html: proposalHtml,
           attachments: proposalAttachments.length ? proposalAttachments : undefined,
         }),
@@ -303,26 +386,58 @@ export default async function handler(req, res) {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          from, to,
-          subject: `Signed Agreement - ${normalizedClientName} / Top View Taxidermy`,
+          from: FROM_ADDRESS,
+          to: recipients,
+          subject: `Signed Agreement - ${clientName} / ${businessLabel}`,
           html: agreementHtml,
           attachments: agreementAttachments.length ? agreementAttachments : undefined,
         }),
       }),
-    ]);
+    ])
 
-    const proposalData = await proposalRes.json().catch(() => ({}));
-    const agreementData = await agreementRes.json().catch(() => ({}));
+    const proposalData = await proposalRes.json().catch(() => ({}))
+    const agreementData = await agreementRes.json().catch(() => ({}))
 
     if (!proposalRes.ok || !agreementRes.ok) {
-      const errors = [];
-      if (!proposalRes.ok) errors.push({ type: 'proposal', error: proposalData });
-      if (!agreementRes.ok) errors.push({ type: 'agreement', error: agreementData });
-      return res.status(500).json({ error: 'One or more emails failed to send.', details: errors });
+      const errors = []
+      if (!proposalRes.ok) errors.push({ type: 'proposal', error: proposalData })
+      if (!agreementRes.ok) errors.push({ type: 'agreement', error: agreementData })
+      const err = new Error('One or more emails failed to send.')
+      err.details = errors
+      throw err
     }
 
-    return res.status(200).json({ success: true, proposalId: proposalData.id, agreementId: agreementData.id });
+    return {
+      success: true,
+      proposalId: proposalData.id,
+      agreementId: agreementData.id,
+      recipients,
+    }
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    throw err
+  }
+}
+
+export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-admin-key')
+
+  if (req.method === 'OPTIONS') return res.status(200).end()
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  if (!requireAdmin(req, res)) return undefined
+
+  let body
+  try {
+    body = await parseJsonBody(req)
+  } catch (err) {
+    return res.status(400).json({ error: err.message })
+  }
+
+  try {
+    const result = await sendSignedDocuments(body, req)
+    return res.status(200).json(result)
+  } catch (err) {
+    return res.status(500).json({ error: err.message, details: err.details })
   }
 }

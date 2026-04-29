@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { loadStripe } from '@stripe/stripe-js'
 import {
   CheckoutElementsProvider,
@@ -10,152 +10,9 @@ import './ClientOnboarding.css'
 const STRIPE_PUBLISHABLE_KEY = (import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '').trim()
 const stripePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY) : null
 
-const CLIENT_NAME = 'Craig Reindl'
-const BUSINESS_NAME = 'Top View Taxidermy'
 const OWNER_NAME = 'Caleb Hingos'
 const COMPANY_NAME = 'Vivid Acuity, LLC'
 const SAVED_SIGNATURE_SRC = '/signature.png?v=1'
-const DEFAULT_CUSTOMER_EMAIL = 'pineapple.906.pistachio@gmail.com'
-const STORAGE_KEY = 'vivid-acuity-onboarding-state'
-const FINALIZED_SESSION_PREFIX = 'vivid-acuity-finalized-session:'
-const PENDING_SESSION_KEY = 'vivid-acuity-pending-session'
-
-const PROPOSAL_CARDS = [
-  {
-    icon: '🎨',
-    title: 'Custom Logo Design',
-    items: [
-      'A brand new logo designed from scratch for Top View Taxidermy.',
-      'Built to reflect the craft and legacy behind the business.',
-      'Delivered in every file format needed for web, print, hats, shirts, and more.',
-    ],
-  },
-  {
-    icon: '💻',
-    title: 'Website Design and Development',
-    items: [
-      'A fully custom website built from the ground up with no templates.',
-      'Responsive across phones, tablets, and desktops.',
-      'Dark, sharp design with a color palette that fits the brand.',
-      'Fast-loading and professional throughout.',
-    ],
-  },
-  {
-    icon: '📸',
-    title: 'Photo Gallery',
-    items: [
-      'Photos organized by mount type so visitors can find what they want quickly.',
-      'Click any photo to open it full screen.',
-      'All photos professionally edited and color-corrected before going live.',
-    ],
-  },
-  {
-    icon: '🔍',
-    title: 'Search Engine Setup',
-    items: [
-      'Built so Google can find it when people search for a taxidermist in Kenosha.',
-      'Displays correctly on every phone with no awkward zooming.',
-    ],
-  },
-  {
-    icon: '🚀',
-    title: 'Live on the Web',
-    items: [
-      'Loads fast so nobody waits.',
-      'Hosted on a reliable platform that stays online.',
-      'Delivered clean with no bugs and ready for real visitors from day one.',
-    ],
-  },
-]
-
-const CONTRACT_SECTIONS = [
-  {
-    title: '1. Parties',
-    content:
-      'This Service Agreement is entered into between Caleb Hingos, operating as Vivid Acuity, LLC (caleb@vividacuity.com), Upper Peninsula, Michigan, and Craig Reindl, operating as Top View Taxidermy, Kenosha, Wisconsin.',
-  },
-  {
-    title: '2. Scope of Work',
-    content:
-      'Vivid Acuity, LLC has completed a custom logo and a fully custom website including responsive design, edited gallery assets, search engine setup, and live deployment.',
-  },
-  {
-    title: '3. Project Fees',
-    content:
-      'Setup Fee: $100. Custom Logo Design: $150. Website Design and Development: $250. Domain Cost: $12. One-time project total: $512, due upon signing this agreement.',
-  },
-  {
-    title: '4. Ongoing Maintenance',
-    content:
-      'Optional maintenance may be selected as either $30/month or $300/year. Coverage includes hosting oversight, uptime monitoring, minor content updates, and dependency maintenance.',
-  },
-  {
-    title: '5. Payment Terms',
-    content:
-      'Full one-time balance is due upon signing. Monthly maintenance begins May 1, 2026 if selected. Annual maintenance covers May 1, 2026 through May 1, 2027 if selected.',
-  },
-  {
-    title: '6. Intellectual Property',
-    content:
-      'Upon receipt of full payment, all rights to the logo and website transfer fully to Craig Reindl / Top View Taxidermy. Vivid Acuity may still display the work in its portfolio.',
-  },
-  {
-    title: '7. Revisions',
-    content:
-      'Up to two rounds of revisions are included. Additional revisions are billed at $75/hour and must be requested in writing.',
-  },
-  {
-    title: '8. Satisfaction Guarantee',
-    content:
-      'If the client is not fully satisfied with the completed website and logo within 3 months of launch, Vivid Acuity, LLC will issue a full refund of all fees paid.',
-  },
-  {
-    title: '9. Limitation of Liability',
-    content:
-      'Total liability of Vivid Acuity, LLC is limited to the total fees paid under this agreement.',
-  },
-  {
-    title: '10. Governing Law',
-    content: 'This agreement is governed by the laws of the State of Michigan.',
-  },
-]
-
-const PLAN_OPTIONS = [
-  {
-    value: 'none',
-    label: 'None',
-    sub: 'No maintenance plan selected',
-    shortLabel: 'No Maintenance',
-    displayPrice: '$0',
-    dueToday: 512,
-    detail: '$512 due today for the completed logo and website project, including the domain cost.',
-    followUp: 'No recurring maintenance charges will be scheduled.',
-    coverage: 'Project delivery only with no ongoing maintenance coverage.',
-  },
-  {
-    value: 'monthly',
-    label: 'Monthly',
-    sub: 'First charge May 1, 2026',
-    shortLabel: 'Monthly - $30/mo',
-    displayPrice: '$30/mo',
-    dueToday: 512,
-    detail: '$512 due today, including the domain cost. Monthly maintenance of $30 begins May 1, 2026.',
-    followUp: '$30/month starts May 1, 2026.',
-    coverage: 'Month-to-month maintenance begins May 1, 2026.',
-  },
-  {
-    value: 'annual',
-    label: 'Annual',
-    sub: 'Coverage through May 1, 2027',
-    shortLabel: 'Annual - $300/yr',
-    displayPrice: '$300/yr',
-    dueToday: 812,
-    detail: '$812 due today: $512 project fee, including the domain cost, plus $300 annual maintenance.',
-    followUp: 'Annual maintenance covers May 1, 2026 through May 1, 2027.',
-    coverage: 'Coverage runs from May 1, 2026 through May 1, 2027.',
-    badge: 'Save $60',
-  },
-]
 
 const PROGRESS_STEPS = [
   { num: 1, label: 'Proposal' },
@@ -163,11 +20,12 @@ const PROGRESS_STEPS = [
   { num: 3, label: 'Payment' },
 ]
 
-function getPlan(value) {
-  return PLAN_OPTIONS.find((option) => option.value === value) || PLAN_OPTIONS[0]
-}
+const FALLBACK_PLANS = [
+  { value: 'none', label: 'None', sub: '', shortLabel: 'No Maintenance', displayPrice: '$0', dueToday: 0, detail: '', followUp: '', coverage: '', badge: '' },
+]
 
 function formatMoney(amount) {
+  if (typeof amount !== 'number' || !Number.isFinite(amount)) return '$0'
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
@@ -182,13 +40,20 @@ function escapeHtml(value) {
   })
 }
 
-function loadStoredOnboardingState() {
+function makeStorageKeys(clientId) {
+  const safeId = clientId || 'unknown'
+  return {
+    state: `vivid-acuity-onboarding-state:${safeId}`,
+    pendingSession: `vivid-acuity-pending-session:${safeId}`,
+    finalizedSessionPrefix: `vivid-acuity-finalized-session:${safeId}:`,
+  }
+}
+
+function loadStoredOnboardingState(storageKey) {
   if (typeof window === 'undefined') return null
-
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
+    const raw = window.localStorage.getItem(storageKey)
     if (!raw) return null
-
     const parsed = JSON.parse(raw)
     return parsed && typeof parsed === 'object' ? parsed : null
   } catch {
@@ -196,15 +61,17 @@ function loadStoredOnboardingState() {
   }
 }
 
-function persistOnboardingState(state) {
+function persistOnboardingState(storageKey, state) {
   if (typeof window === 'undefined') return
-
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(state))
+  } catch {
+    /* ignore quota errors */
+  }
 }
 
 function clearCheckoutParams() {
   if (typeof window === 'undefined') return
-
   const nextUrl = new URL(window.location.href)
   nextUrl.searchParams.delete('checkout')
   nextUrl.searchParams.delete('session_id')
@@ -219,25 +86,20 @@ function getStripeKeyMode(key) {
   return 'unknown'
 }
 
-async function sendEmail(payload) {
-  const res = await fetch('/api/send-email', {
+async function postClientStatusUpdate(payload) {
+  const res = await fetch('/api/update-client-status', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
-
   const data = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    throw new Error(data.error || 'Failed to send email.')
-  }
-
+  if (!res.ok) throw new Error(data.error || 'Failed to record payment status.')
   return data
 }
 
 async function toDataUrl(src) {
   const response = await fetch(src)
   const blob = await response.blob()
-
   return await new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onloadend = () => resolve(reader.result || '')
@@ -252,46 +114,79 @@ async function createCheckoutSession(payload) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
-
   const data = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    throw new Error(data.error || 'Failed to create Stripe checkout session.')
-  }
-
+  if (!res.ok) throw new Error(data.error || 'Failed to create Stripe checkout session.')
   if (typeof data.clientSecret !== 'string' || !data.clientSecret.trim()) {
     throw new Error(
-      'Stripe did not return a client secret. On Vercel, verify /api/create-checkout-session is deployed and STRIPE_SECRET_KEY is set.'
+      'Stripe did not return a client secret. Verify /api/create-checkout-session is deployed and STRIPE_SECRET_KEY is set.'
     )
   }
-
   return data
 }
 
-async function fetchCheckoutSession(sessionId) {
-  const res = await fetch(`/api/checkout-session?session_id=${encodeURIComponent(sessionId)}`)
-  const data = await res.json().catch(() => ({}))
+function findPlanOption(planOptions, value) {
+  return planOptions.find((option) => option.value === value) || planOptions[0] || FALLBACK_PLANS[0]
+}
 
-  if (!res.ok) {
-    throw new Error(data.error || 'Failed to verify Stripe checkout session.')
+function buildMaintenanceLineItem(planOption) {
+  if (!planOption || planOption.value === 'none') return null
+  if (planOption.value === 'monthly') {
+    return {
+      label: planOption.shortLabel || 'Monthly maintenance',
+      amount: parsePlanRecurringAmount(planOption.displayPrice),
+      mode: 'recurring_monthly',
+    }
   }
+  if (planOption.value === 'annual') {
+    const annualAmount = Math.max(0, (planOption.dueToday || 0) - estimateProjectTotalForAnnual(planOption))
+    return {
+      label: planOption.shortLabel || 'Annual maintenance',
+      amount: annualAmount > 0 ? annualAmount : parsePlanAnnualAmount(planOption.displayPrice),
+      mode: 'one_time',
+    }
+  }
+  return null
+}
 
-  return data
+function parsePlanRecurringAmount(displayPrice) {
+  const match = String(displayPrice || '').match(/\$?([0-9]+(?:\.[0-9]{1,2})?)/)
+  return match ? Number(match[1]) : 0
+}
+
+function parsePlanAnnualAmount(displayPrice) {
+  const match = String(displayPrice || '').match(/\$?([0-9]+(?:\.[0-9]{1,2})?)/)
+  return match ? Number(match[1]) : 0
+}
+
+function estimateProjectTotalForAnnual(planOption) {
+  // Best-effort: annual plan dueToday usually equals project total + annual maintenance.
+  // We don't have a direct field, so caller can override via maintenanceLineItem if needed.
+  // Prefer to subtract a parsed annual amount from dueToday.
+  const parsed = parsePlanAnnualAmount(planOption.displayPrice)
+  return parsed > 0 ? Math.max(0, (planOption.dueToday || 0) - parsed) : (planOption.dueToday || 0)
 }
 
 function generatePrintableHTML({
   clientName,
+  businessName,
+  businessLocation,
+  proposalCards,
+  contractSections,
+  pricingLineItems,
+  projectTotal,
   proposalSignedAt,
   contractSignedAt,
   proposalSigImage,
   contractSigImage,
   ownerSigImage,
   plan,
+  satisfactionGuaranteeMonths,
 }) {
   const now = new Date().toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' })
   const effectiveDate = new Date().toLocaleDateString('en-US', { dateStyle: 'long' })
+
   const sanitizePrintableImageSource = (src) => {
     if (typeof src !== 'string') return ''
-
     const trimmed = src.trim()
     if (trimmed.startsWith('data:image/')) return trimmed
     if (/^\/[a-zA-Z0-9/_\-.]+(?:\?[a-zA-Z0-9=&._-]+)?$/.test(trimmed)) return trimmed
@@ -306,16 +201,26 @@ function generatePrintableHTML({
   }
 
   const safeClientName = escapeHtml(clientName)
+  const safeBusiness = escapeHtml(businessName)
+  const safeLocation = escapeHtml(businessLocation || '')
   const safeProposalSignedAt = escapeHtml(proposalSignedAt)
   const safeContractSignedAt = escapeHtml(contractSignedAt)
   const safeNow = escapeHtml(now)
   const safeEffectiveDate = escapeHtml(effectiveDate)
-  const safePlanShortLabel = escapeHtml(plan.shortLabel)
-  const safePlanDetail = escapeHtml(plan.detail)
-  const safePlanCoverage = escapeHtml(plan.coverage)
+  const safePlanShortLabel = escapeHtml(plan?.shortLabel || '')
+  const safePlanDetail = escapeHtml(plan?.detail || '')
+  const safePlanCoverage = escapeHtml(plan?.coverage || '')
   const proposalSigTag = buildPrintableSignatureTag(proposalSigImage)
   const contractSigTag = buildPrintableSignatureTag(contractSigImage)
   const ownerSigTag = buildPrintableSignatureTag(ownerSigImage)
+  const guaranteeMonths = Number.isFinite(satisfactionGuaranteeMonths) ? satisfactionGuaranteeMonths : 3
+
+  const pricingRowsHtml = (pricingLineItems || [])
+    .map(
+      (item) =>
+        `<tr><td style="padding:6px 0;border-bottom:1px solid #f0f0f0;">${escapeHtml(item.label)}</td><td style="padding:6px 0;border-bottom:1px solid #f0f0f0;text-align:right;">${formatMoney(item.amount)}</td></tr>`
+    )
+    .join('')
 
   return `<!DOCTYPE html>
 <html>
@@ -346,23 +251,33 @@ function generatePrintableHTML({
     <div class="page-break">
       <div class="co-name">${COMPANY_NAME}</div>
       <h1>Project Proposal</h1>
-      <div class="subtitle">${safeClientName} / ${BUSINESS_NAME} - ${safeNow}</div>
+      <div class="subtitle">${safeClientName} / ${safeBusiness} - ${safeNow}</div>
 
       <div class="row"><div class="label">Client</div><div class="value">${safeClientName}</div></div>
-      <div class="row"><div class="label">Business</div><div class="value">${BUSINESS_NAME}</div></div>
+      <div class="row"><div class="label">Business</div><div class="value">${safeBusiness}${safeLocation ? `, ${safeLocation}` : ''}</div></div>
       <div class="row"><div class="label">Proposal Finalized</div><div class="signed">${safeProposalSignedAt}</div></div>
 
       <div class="section-title">Deliverables</div>
-      ${PROPOSAL_CARDS.map(
-        (card) => `
-          <div class="clause">
-            <div class="clause-title">${escapeHtml(card.title)}</div>
-            <div>${card.items
-              .map((item) => `<div style="font-size:13px;color:#444;">- ${escapeHtml(item)}</div>`)
-              .join('')}</div>
-          </div>
-        `
-      ).join('')}
+      ${(proposalCards || [])
+        .map(
+          (card) => `
+            <div class="clause">
+              <div class="clause-title">${escapeHtml(card.title || '')}</div>
+              <div>${(card.items || [])
+                .map((item) => `<div style="font-size:13px;color:#444;">- ${escapeHtml(item)}</div>`)
+                .join('')}</div>
+            </div>
+          `
+        )
+        .join('')}
+
+      <div class="section-title">Investment</div>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:8px;">
+        ${pricingRowsHtml}
+        <tr><td style="padding:8px 0;font-weight:700;"><strong>One-Time Total</strong></td><td style="padding:8px 0;text-align:right;font-weight:700;">${formatMoney(projectTotal || 0)}</td></tr>
+      </table>
+
+      <p style="font-size:13px;color:#444;margin:18px 0 4px;"><strong style="color:#2a7a5a;">${guaranteeMonths}-Month Satisfaction Guarantee.</strong> If the client is not fully satisfied with the completed work within ${guaranteeMonths} months of launch, ${COMPANY_NAME} will issue a full refund of all fees paid.</p>
 
       <div class="section-title">Signature Block</div>
       <div class="sig-block">
@@ -386,22 +301,24 @@ function generatePrintableHTML({
     <div>
       <div class="co-name">${COMPANY_NAME}</div>
       <h1>Service Agreement</h1>
-      <div class="subtitle">${safeClientName} / ${BUSINESS_NAME} - ${safeNow}</div>
+      <div class="subtitle">${safeClientName} / ${safeBusiness} - ${safeNow}</div>
 
       <div class="row"><div class="label">Agreement Finalized</div><div class="signed">${safeContractSignedAt}</div></div>
       <div class="row"><div class="label">Effective Date</div><div class="value">${safeEffectiveDate}</div></div>
       <div class="row"><div class="label">Selected Plan</div><div class="value">${safePlanShortLabel}</div></div>
-      <div class="row"><div class="label">Due Today</div><div class="value">${formatMoney(plan.dueToday)}</div></div>
+      <div class="row"><div class="label">Due Today</div><div class="value">${formatMoney(plan?.dueToday || 0)}</div></div>
 
       <div class="section-title">Agreement Terms</div>
-      ${CONTRACT_SECTIONS.map(
-        (section) => `
-          <div class="clause">
-            <div class="clause-title">${escapeHtml(section.title)}</div>
-            <p style="font-size:12px;color:#555;line-height:1.75;margin:0;">${escapeHtml(section.content)}</p>
-          </div>
-        `
-      ).join('')}
+      ${(contractSections || [])
+        .map(
+          (section) => `
+            <div class="clause">
+              <div class="clause-title">${escapeHtml(section.title || '')}</div>
+              <p style="font-size:12px;color:#555;line-height:1.75;margin:0;">${escapeHtml(section.content || '')}</p>
+            </div>
+          `
+        )
+        .join('')}
 
       <div class="section-title">Selected Maintenance Plan</div>
       <p style="font-size:13px;color:#444;">${safePlanDetail}</p>
@@ -432,13 +349,12 @@ function openPrintableDocuments(data) {
   const html = generatePrintableHTML(data)
   const printWindow = window.open('', '_blank')
   if (!printWindow) return false
-
   printWindow.document.write(html)
   printWindow.document.close()
   return true
 }
 
-function SignatureCanvas({ label, onConfirm, locked, initialName = '', initialSignatureImage = '' }) {
+function SignatureCanvas({ label, onConfirm, locked, initialName = '', initialSignatureImage = '', confirmLabel = 'Confirm Signature' }) {
   const canvasRef = useRef(null)
   const isDrawing = useRef(false)
   const hasSigRef = useRef(Boolean(initialSignatureImage))
@@ -449,7 +365,6 @@ function SignatureCanvas({ label, onConfirm, locked, initialName = '', initialSi
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return undefined
-
     const ctx = canvas.getContext('2d')
 
     const syncHasSig = (nextHasSig) => {
@@ -459,7 +374,6 @@ function SignatureCanvas({ label, onConfirm, locked, initialName = '', initialSi
 
     const drawSignatureImage = (signatureImage) => {
       if (!signatureImage) return
-
       const image = new Image()
       image.onload = () => {
         const rect = canvas.getBoundingClientRect()
@@ -470,7 +384,6 @@ function SignatureCanvas({ label, onConfirm, locked, initialName = '', initialSi
         const drawHeight = image.height * scale
         const drawX = (canvasWidth - drawWidth) / 2
         const drawY = (canvasHeight - drawHeight) / 2
-
         ctx.clearRect(0, 0, canvasWidth, canvasHeight)
         ctx.drawImage(image, drawX, drawY, drawWidth, drawHeight)
         syncHasSig(true)
@@ -483,7 +396,6 @@ function SignatureCanvas({ label, onConfirm, locked, initialName = '', initialSi
         hasSigRef.current && canvas.width > 0 && canvas.height > 0
           ? canvas.toDataURL('image/png')
           : signatureImageRef.current
-
       signatureImageRef.current = existingSignatureImage || ''
 
       const rect = canvas.getBoundingClientRect()
@@ -594,13 +506,13 @@ function SignatureCanvas({ label, onConfirm, locked, initialName = '', initialSi
           onConfirm(typedName.trim(), signatureImage)
         }}
       >
-        Confirm Signature
+        {confirmLabel}
       </button>
     </div>
   )
 }
 
-function Header({ titlePrefix }) {
+function Header({ titlePrefix, clientName, businessName }) {
   return (
     <div className="header">
       <div className="logo-wrap">
@@ -608,7 +520,7 @@ function Header({ titlePrefix }) {
       </div>
       <div className="header-divider" />
       <div className="client-tag">
-        {titlePrefix} <span>{CLIENT_NAME} / {BUSINESS_NAME}</span>
+        {titlePrefix} <span>{clientName} / {businessName}</span>
       </div>
     </div>
   )
@@ -670,10 +582,20 @@ function DocumentSignaturePreview({ clientName, clientSignatureImage }) {
   )
 }
 
-function ProposalStep({ onSigned, defaultName, previewSignatureImage }) {
+function ProposalStep({
+  clientName,
+  businessName,
+  proposalCards,
+  pricingLineItems,
+  projectTotal,
+  satisfactionGuaranteeMonths,
+  onSigned,
+  defaultName,
+  previewSignatureImage,
+}) {
   return (
     <div className="fade-up">
-      <Header titlePrefix="Proposal for" />
+      <Header titlePrefix="Proposal for" clientName={clientName} businessName={businessName} />
       <div className="section-eyebrow">Step 1 of 3</div>
       <div className="section-title">Proposal and Signature</div>
       <p className="section-lead">
@@ -681,12 +603,12 @@ function ProposalStep({ onSigned, defaultName, previewSignatureImage }) {
         Your Vivid Acuity signature will still be applied automatically after payment.
       </p>
 
-      {PROPOSAL_CARDS.map((card) => (
+      {(proposalCards || []).map((card) => (
         <div className="card" key={card.title}>
           <span className="card-icon">{card.icon}</span>
           <div className="card-title">{card.title}</div>
           <ul className="card-items">
-            {card.items.map((item) => (
+            {(card.items || []).map((item) => (
               <li key={item}>{item}</li>
             ))}
           </ul>
@@ -700,11 +622,13 @@ function ProposalStep({ onSigned, defaultName, previewSignatureImage }) {
             <tr><th>Item</th><th>Amount</th></tr>
           </thead>
           <tbody>
-            <tr><td>Setup Fee</td><td>$100</td></tr>
-            <tr><td>Custom Logo Design</td><td>$150</td></tr>
-            <tr><td>Website Design and Development</td><td>$250</td></tr>
-            <tr><td>Domain Cost</td><td>$12</td></tr>
-            <tr><td><strong>One-Time Total</strong></td><td><strong>$512</strong></td></tr>
+            {(pricingLineItems || []).map((item) => (
+              <tr key={item.label}>
+                <td>{item.label}</td>
+                <td>{formatMoney(item.amount)}</td>
+              </tr>
+            ))}
+            <tr><td><strong>One-Time Total</strong></td><td><strong>{formatMoney(projectTotal || 0)}</strong></td></tr>
           </tbody>
         </table>
       </div>
@@ -712,7 +636,7 @@ function ProposalStep({ onSigned, defaultName, previewSignatureImage }) {
       <div className="card mt-16 guarantee-card">
         <div className="card-title guarantee-title">100% Satisfaction Guarantee</div>
         <p className="guarantee-copy">
-          Not happy with the final website and logo within 3 months of launch? Every dollar
+          Not happy with the final website and logo within {satisfactionGuaranteeMonths || 3} months of launch? Every dollar
           gets refunded. No questions. No runaround.
         </p>
       </div>
@@ -730,12 +654,11 @@ function ProposalStep({ onSigned, defaultName, previewSignatureImage }) {
   )
 }
 
-function MaintenancePlanSelector({ value, onSelect }) {
+function MaintenancePlanSelector({ planOptions, value, onSelect }) {
   return (
     <div className="plan-list">
-      {PLAN_OPTIONS.map((option) => {
+      {planOptions.map((option) => {
         const selected = option.value === value
-
         return (
           <button
             key={option.value}
@@ -772,33 +695,33 @@ function TopBackButton({ onBack }) {
   )
 }
 
-function StepActions({ primaryLabel, onPrimary, primaryDisabled = false, primaryClassName = 'btn-primary' }) {
-  return (
-    <div className="step-actions">
-      <button className={primaryClassName} type="button" onClick={onPrimary} disabled={primaryDisabled}>
-        {primaryLabel}
-      </button>
-    </div>
-  )
-}
-
-function AgreementStep({ proposalName, onContinue, previewSignatureImage, initialPlan = 'none' }) {
+function AgreementStep({
+  clientName,
+  businessName,
+  contractSections,
+  planOptions,
+  proposalName,
+  previewSignatureImage,
+  initialPlan = 'none',
+  onContinue,
+}) {
   const [plan, setPlan] = useState(initialPlan)
+  const planOption = findPlanOption(planOptions, plan)
 
   return (
     <div className="fade-up">
-      <Header titlePrefix="Agreement for" />
+      <Header titlePrefix="Agreement for" clientName={clientName} businessName={businessName} />
       <div className="accepted-badge"><span>&#10003;</span> Proposal Signed</div>
       <div className="section-eyebrow">Step 2 of 3</div>
       <div className="section-title">Service Agreement and Plan Selection</div>
       <p className="section-lead">
-        Review the agreement and choose the maintenance plan. Your proposal signature
-        carries forward automatically here, and the saved Vivid Acuity signature is
+        Review the agreement, choose the maintenance plan, and sign once more to confirm
+        the agreement separately from the proposal. The saved Vivid Acuity signature is
         applied after payment completes.
       </p>
 
       <div className="contract-scroll">
-        {CONTRACT_SECTIONS.map((section) => (
+        {(contractSections || []).map((section) => (
           <div className="contract-section" key={section.title}>
             <div className="contract-section-title">{section.title}</div>
             <p>{section.content}</p>
@@ -812,29 +735,35 @@ function AgreementStep({ proposalName, onContinue, previewSignatureImage, initia
 
       <div className="sig-wrap">
         <span className="sig-label">Select Your Maintenance Plan</span>
-        <MaintenancePlanSelector value={plan} onSelect={setPlan} />
+        <MaintenancePlanSelector planOptions={planOptions} value={plan} onSelect={setPlan} />
         <div className="plan-summary">
           <div className="plan-summary-label">Current Selection</div>
-          <div className="plan-summary-value">{getPlan(plan).detail}</div>
+          <div className="plan-summary-value">{planOption.detail}</div>
         </div>
       </div>
 
       <SavedSignatureNotice />
       <DocumentSignaturePreview clientName={proposalName} clientSignatureImage={previewSignatureImage} />
 
-      <StepActions onPrimary={() => onContinue({ retainer: plan })} primaryLabel="Continue to Payment" />
+      <SignatureCanvas
+        label="Agreement - Draw a fresh signature"
+        initialName={proposalName}
+        confirmLabel="Confirm Signature & Continue to Payment"
+        onConfirm={(name, signatureImage) => {
+          onContinue({ retainer: plan, contractSigImage: signatureImage, contractSignerName: name })
+        }}
+      />
     </div>
   )
 }
 
-function CardOnlyCheckoutForm({ email, onEmailChange, amount }) {
+function CardOnlyCheckoutForm({ email, onEmailChange, clientId }) {
   const checkoutState = useCheckout()
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState('')
 
   const handleSubmit = async (event) => {
     event.preventDefault()
-
     if (checkoutState.type !== 'success') return
 
     const customerEmail = email.trim()
@@ -864,7 +793,12 @@ function CardOnlyCheckoutForm({ email, onEmailChange, amount }) {
         return
       }
 
-      window.location.assign(`/?checkout=success&session_id=${encodeURIComponent(confirmResult.session.id)}`)
+      window.location.assign(
+        `/?client=${encodeURIComponent(clientId)}&checkout=success&session_id=${encodeURIComponent(confirmResult.session.id)}`
+      )
+    } catch (err) {
+      const message = err instanceof Error ? err.message : typeof err === 'string' ? err : ''
+      setFormError(message || 'Payment could not be completed.')
     } finally {
       setSubmitting(false)
     }
@@ -873,13 +807,19 @@ function CardOnlyCheckoutForm({ email, onEmailChange, amount }) {
   if (checkoutState.type === 'loading') {
     return <p className="section-lead" style={{ textAlign: 'center' }}>Preparing secure card form...</p>
   }
-
   if (checkoutState.type === 'error') {
     return <p className="payment-error">{checkoutState.error.message || 'Unable to load the card form.'}</p>
   }
 
+  const checkoutTotal = checkoutState.checkout.total.total.amount
+
   return (
     <form className="payment-form-shell" onSubmit={handleSubmit}>
+      <div className="stripe-total-row" aria-live="polite">
+        <span>Total charged today</span>
+        <strong>{checkoutTotal}</strong>
+      </div>
+
       <label className="payment-field">
         <span className="sig-label">Customer Email</span>
         <input
@@ -899,18 +839,13 @@ function CardOnlyCheckoutForm({ email, onEmailChange, amount }) {
           options={{
             layout: 'tabs',
             paymentMethodOrder: ['card'],
-            wallets: {
-              applePay: 'never',
-              googlePay: 'never',
-              link: 'never',
-            },
+            wallets: { applePay: 'never', googlePay: 'never', link: 'never' },
             fields: {
-              billingDetails: {
-                email: 'never',
-                phone: 'never',
-                address: 'if_required',
-              },
+              billingDetails: { email: 'never', phone: 'never', address: 'if_required' },
             },
+          }}
+          onLoadError={(event) => {
+            setFormError(event.error.message || 'Unable to load the secure card form.')
           }}
         />
       </div>
@@ -924,19 +859,31 @@ function CardOnlyCheckoutForm({ email, onEmailChange, amount }) {
   )
 }
 
-function PaymentStep({ proposalName, signedData, proposalSignedAt, contractSignedAt }) {
-  const initialPlan = signedData?.retainer || 'none'
+function PaymentStep({
+  clientId,
+  clientName,
+  businessName,
+  planOptions,
+  pricingLineItems,
+  monthlyStartIso,
+  defaultCustomerEmail,
+  monthlyMaintenanceStart,
+  annualMaintenanceEnd,
+  signedData,
+  proposalSignedAt,
+  contractSignedAt,
+}) {
+  const initialPlan = signedData?.retainer || (planOptions[0] && planOptions[0].value) || 'none'
   const [retainer, setRetainer] = useState(initialPlan)
   const [editing, setEditing] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [clientSecret, setClientSecret] = useState('')
-  const [customerEmail, setCustomerEmail] = useState(DEFAULT_CUSTOMER_EMAIL)
-  const [customAmount, setCustomAmount] = useState(null)
-  const [customInput, setCustomInput] = useState('')
+  const [customerEmail, setCustomerEmail] = useState(defaultCustomerEmail || '')
 
-  const plan = getPlan(retainer)
-  const effectiveDueToday = customAmount !== null ? customAmount : plan.dueToday
+  const plan = findPlanOption(planOptions, retainer)
+  const effectiveDueToday = plan.dueToday || 0
+  const maintenanceLineItem = useMemo(() => buildMaintenanceLineItem(plan), [plan])
 
   useEffect(() => {
     let active = true
@@ -956,9 +903,8 @@ function PaymentStep({ proposalName, signedData, proposalSignedAt, contractSigne
 
       try {
         const { clientSecret: secret, livemode } = await createCheckoutSession({
-          clientName: proposalName,
-          retainer,
-          customAmount,
+          clientId,
+          planValue: retainer,
           proposalSignedAt,
           contractSignedAt,
         })
@@ -987,13 +933,12 @@ function PaymentStep({ proposalName, signedData, proposalSignedAt, contractSigne
     }
 
     initCheckout()
-
     return () => { active = false }
-  }, [retainer, customAmount, proposalName, proposalSignedAt, contractSignedAt])
+  }, [retainer, clientId, proposalSignedAt, contractSignedAt])
 
   return (
     <div className="fade-up">
-      <Header titlePrefix="Payment for" />
+      <Header titlePrefix="Payment for" clientName={clientName} businessName={businessName} />
       <div className="accepted-badge"><span>&#10003;</span> Proposal Signed <span>&#10003;</span> Agreement Signed</div>
       <div className="section-eyebrow">Step 3 of 3</div>
       <div className="section-title">Payment</div>
@@ -1015,90 +960,56 @@ function PaymentStep({ proposalName, signedData, proposalSignedAt, contractSigne
 
         {editing && (
           <div className="summary-editor">
-            <MaintenancePlanSelector value={retainer} onSelect={(val) => { setClientSecret(''); setRetainer(val); setCustomAmount(null); setCustomInput('') }} />
-            <div className="custom-price-field">
-              <label className="custom-price-label">Or set a custom total due today ($)</label>
-              <div className="custom-price-input-wrap">
-                <span className="custom-price-dollar">$</span>
-                <input
-                  type="number"
-                  className="custom-price-input"
-                  min="1"
-                  step="1"
-                  value={customInput}
-                  onChange={(e) => setCustomInput(e.target.value)}
-                  placeholder={String(effectiveDueToday)}
-                />
-              </div>
-            </div>
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={() => {
-                const parsed = parseInt(customInput, 10)
-                if (!isNaN(parsed) && parsed > 0) {
-                  setClientSecret('')
-                  setCustomAmount(parsed)
-                }
-                setEditing(false)
-              }}
-            >
-              Done - Confirm Price
-            </button>
+            <MaintenancePlanSelector
+              planOptions={planOptions}
+              value={retainer}
+              onSelect={(val) => { setClientSecret(''); setRetainer(val) }}
+            />
           </div>
         )}
 
-        {customAmount === null && (
-          <>
+        <>
+          {(pricingLineItems || []).map((item) => (
+            <div className="line-item" key={item.label}>
+              <div>
+                <div className="line-item-title">{item.label}</div>
+              </div>
+              <div className="line-item-amount">{formatMoney(item.amount)}</div>
+            </div>
+          ))}
+
+          {retainer === 'annual' && maintenanceLineItem && (
             <div className="line-item">
               <div>
-                <div className="line-item-title">One-Time Project Fee</div>
-                <div className="line-item-copy">Logo + website build, paid once.</div>
+                <div className="line-item-title">{maintenanceLineItem.label}</div>
+                {annualMaintenanceEnd && (
+                  <div className="line-item-copy">Coverage ends {annualMaintenanceEnd}.</div>
+                )}
               </div>
-              <div className="line-item-amount">$500</div>
+              <div className="line-item-amount">{formatMoney(maintenanceLineItem.amount)}</div>
             </div>
+          )}
 
-            <div className="line-item">
+          {retainer === 'monthly' && maintenanceLineItem && (
+            <div className="line-item muted-line">
               <div>
-                <div className="line-item-title">Domain Cost</div>
-                <div className="line-item-copy">Annual domain registration paid today.</div>
+                <div className="line-item-title">{maintenanceLineItem.label}</div>
+                {monthlyMaintenanceStart && (
+                  <div className="line-item-copy">{formatMoney(maintenanceLineItem.amount)} begins {monthlyMaintenanceStart} and is not charged today.</div>
+                )}
               </div>
-              <div className="line-item-amount">$12</div>
+              <div className="line-item-amount muted-amount">{formatMoney(maintenanceLineItem.amount)}/mo</div>
             </div>
-
-            {retainer === 'annual' && (
-              <div className="line-item">
-                <div>
-                  <div className="line-item-title">Annual Maintenance</div>
-                  <div className="line-item-copy">Coverage from May 1, 2026 through May 1, 2027.</div>
-                </div>
-                <div className="line-item-amount">$300</div>
-              </div>
-            )}
-
-            {retainer === 'monthly' && (
-              <div className="line-item muted-line">
-                <div>
-                  <div className="line-item-title">Monthly Maintenance</div>
-                  <div className="line-item-copy">$30 begins May 1, 2026 and is not charged today.</div>
-                </div>
-                <div className="line-item-amount muted-amount">$30/mo</div>
-              </div>
-            )}
-          </>
-        )}
+          )}
+        </>
 
         <div className="due-today-card">
           <div className="due-today-label">Due Today</div>
           <div className="due-today-amount">{formatMoney(effectiveDueToday)}</div>
         </div>
 
-        {customAmount === null && (
-          <>
-            <div className="payment-note">{plan.detail}</div>
-            <div className="payment-note">{plan.followUp}</div>
-          </>
-        )}
+        <div className="payment-note">{plan.detail}</div>
+        <div className="payment-note">{plan.followUp}</div>
       </div>
 
       {error && <p className="payment-error">{error}</p>}
@@ -1111,9 +1022,7 @@ function PaymentStep({ proposalName, signedData, proposalSignedAt, contractSigne
           stripe={stripePromise}
           options={{
             clientSecret,
-            defaultValues: {
-              email: DEFAULT_CUSTOMER_EMAIL,
-            },
+            defaultValues: { email: defaultCustomerEmail || '' },
             elementsOptions: {
               appearance: {
                 theme: 'night',
@@ -1146,9 +1055,7 @@ function PaymentStep({ proposalName, signedData, proposalSignedAt, contractSigne
                     fontWeight: '600',
                     marginBottom: '8px',
                   },
-                  '.Tab': {
-                    display: 'none',
-                  },
+                  '.Tab': { display: 'none' },
                   '.Block': {
                     backgroundColor: '#141414',
                     border: '0',
@@ -1156,17 +1063,14 @@ function PaymentStep({ proposalName, signedData, proposalSignedAt, contractSigne
                   },
                 },
               },
-              savedPaymentMethod: {
-                enableSave: 'never',
-                enableRedisplay: 'never',
-              },
+              savedPaymentMethod: { enableSave: 'never', enableRedisplay: 'never' },
             },
           }}
         >
           <CardOnlyCheckoutForm
             email={customerEmail}
             onEmailChange={setCustomerEmail}
-            amount={effectiveDueToday}
+            clientId={clientId}
           />
         </CheckoutElementsProvider>
       )}
@@ -1174,7 +1078,8 @@ function PaymentStep({ proposalName, signedData, proposalSignedAt, contractSigne
       <div className="stripe-note">
         <span>🔒</span>
         <span>
-          Secure Stripe card payment handles the charge. Monthly maintenance begins on May 1, 2026.
+          Secure Stripe card payment handles the charge.{' '}
+          {monthlyMaintenanceStart ? `Monthly maintenance begins on ${monthlyMaintenanceStart}.` : ''}
         </span>
       </div>
     </div>
@@ -1182,19 +1087,17 @@ function PaymentStep({ proposalName, signedData, proposalSignedAt, contractSigne
 }
 
 function ThankYouStep({ clientName, plan, onPrint }) {
-  const firstName = clientName.split(' ')[0]
-
+  const firstName = (clientName || '').split(' ')[0] || 'there'
   return (
     <div className="thankyou">
       <span className="thankyou-icon">🎉</span>
       <div className="thankyou-title">You are all set, {firstName}.</div>
       <p className="thankyou-text">
         Payment received, your saved signature was applied to both documents, and a
-        confirmation email was sent to
-        <code className="thankyou-email">caleb@vividacuity.com</code>.
+        confirmation email was sent to the address on file.
       </p>
       <div className="thankyou-detail">
-        <span>&#10003;</span> {plan.shortLabel} selected
+        <span>&#10003;</span> {plan?.shortLabel || ''} selected
       </div>
       <button type="button" className="btn-secondary thankyou-button" onClick={onPrint}>
         Open Signed Documents
@@ -1203,15 +1106,43 @@ function ThankYouStep({ clientName, plan, onPrint }) {
   )
 }
 
-export default function ClientOnboarding() {
-  const storedState = loadStoredOnboardingState()
-  const [step, setStep] = useState(storedState?.step || 1)
-  const [proposalName, setProposalName] = useState(storedState?.proposalName || '')
-  const [signedData, setSignedData] = useState(storedState?.signedData || { retainer: 'none' })
-  const [proposalSignedAt, setProposalSignedAt] = useState(storedState?.proposalSignedAt || '')
-  const [contractSignedAt, setContractSignedAt] = useState(storedState?.contractSignedAt || '')
-  const [proposalSigImage, setProposalSigImage] = useState(storedState?.proposalSigImage || '')
-  const [contractSigImage, setContractSigImage] = useState(storedState?.contractSigImage || '')
+function FullScreenStatus({ title, message, isError }) {
+  return (
+    <div className="app" style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '32px' }}>
+      <div>
+        <div className="section-eyebrow">Vivid Acuity</div>
+        <div className="section-title">{title}</div>
+        <p className={isError ? 'payment-error' : 'section-lead'} style={{ maxWidth: 560, margin: '0 auto' }}>{message}</p>
+      </div>
+    </div>
+  )
+}
+
+function OnboardingApp({ clientId, clientConfig }) {
+  const config = clientConfig.config || {}
+  const planOptions = Array.isArray(config.maintenancePlans) && config.maintenancePlans.length
+    ? config.maintenancePlans
+    : FALLBACK_PLANS
+  const proposalCards = Array.isArray(config.proposalCards) ? config.proposalCards : []
+  const contractSections = Array.isArray(config.contractSections) ? config.contractSections : []
+  const pricingLineItems = Array.isArray(config.pricingLineItems) ? config.pricingLineItems : []
+  const projectTotal = typeof config.projectTotal === 'number' ? config.projectTotal : 0
+  const satisfactionGuaranteeMonths = typeof config.satisfactionGuaranteeMonths === 'number' ? config.satisfactionGuaranteeMonths : 3
+  const monthlyStartIso = typeof config.monthlyStartIso === 'string' ? config.monthlyStartIso : ''
+  const monthlyMaintenanceStart = typeof config.monthlyMaintenanceStart === 'string' ? config.monthlyMaintenanceStart : ''
+  const annualMaintenanceEnd = typeof config.annualMaintenanceEnd === 'string' ? config.annualMaintenanceEnd : ''
+
+  const storageKeys = useMemo(() => makeStorageKeys(clientId), [clientId])
+  const stored = useMemo(() => loadStoredOnboardingState(storageKeys.state), [storageKeys.state])
+  const initialName = stored?.proposalName || clientConfig.clientName || ''
+
+  const [step, setStep] = useState(stored?.step || 1)
+  const [proposalName, setProposalName] = useState(initialName)
+  const [signedData, setSignedData] = useState(stored?.signedData || { retainer: planOptions[0]?.value || 'none' })
+  const [proposalSignedAt, setProposalSignedAt] = useState(stored?.proposalSignedAt || '')
+  const [contractSignedAt, setContractSignedAt] = useState(stored?.contractSignedAt || '')
+  const [proposalSigImage, setProposalSigImage] = useState(stored?.proposalSigImage || '')
+  const [contractSigImage, setContractSigImage] = useState(stored?.contractSigImage || '')
   const [emailError, setEmailError] = useState('')
   const [checkoutStatus, setCheckoutStatus] = useState('')
   const ownerSigImage = SAVED_SIGNATURE_SRC
@@ -1226,7 +1157,7 @@ export default function ClientOnboarding() {
   }, [step])
 
   useEffect(() => {
-    persistOnboardingState({
+    persistOnboardingState(storageKeys.state, {
       step,
       proposalName,
       signedData,
@@ -1235,7 +1166,7 @@ export default function ClientOnboarding() {
       proposalSigImage,
       contractSigImage,
     })
-  }, [step, proposalName, signedData, proposalSignedAt, contractSignedAt, proposalSigImage, contractSigImage])
+  }, [step, proposalName, signedData, proposalSignedAt, contractSignedAt, proposalSigImage, contractSigImage, storageKeys.state])
 
   useEffect(() => {
     const currentUrl = new URL(window.location.href)
@@ -1244,7 +1175,7 @@ export default function ClientOnboarding() {
     const sessionId = currentUrl.searchParams.get('session_id')
 
     if (canceled === '1') {
-      window.localStorage.removeItem(PENDING_SESSION_KEY)
+      window.localStorage.removeItem(storageKeys.pendingSession)
       setStep(3)
       setCheckoutStatus('Stripe Checkout was canceled. Your signatures and plan selection are still saved here.')
       clearCheckoutParams()
@@ -1252,17 +1183,17 @@ export default function ClientOnboarding() {
     }
 
     if (checkoutFlag === 'success' && sessionId) {
-      window.localStorage.setItem(PENDING_SESSION_KEY, sessionId)
+      window.localStorage.setItem(storageKeys.pendingSession, sessionId)
       setStep(3)
       setCheckoutStatus('Verifying your Stripe payment...')
       clearCheckoutParams()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
-    const sessionId = window.localStorage.getItem(PENDING_SESSION_KEY)
+    const sessionId = window.localStorage.getItem(storageKeys.pendingSession)
     if (!sessionId) return
-
     let active = true
 
     const finalizeCheckout = async () => {
@@ -1271,13 +1202,10 @@ export default function ClientOnboarding() {
       setEmailError('')
 
       try {
-        const session = await fetchCheckoutSession(sessionId)
+        const finalizedKey = `${storageKeys.finalizedSessionPrefix}${sessionId}`
 
-        if (!active) return
-
-        if (window.localStorage.getItem(`${FINALIZED_SESSION_PREFIX}${sessionId}`) === '1') {
-          window.localStorage.removeItem(PENDING_SESSION_KEY)
-          setSignedData((current) => ({ ...current, retainer: session.retainer }))
+        if (window.localStorage.getItem(finalizedKey) === '1') {
+          window.localStorage.removeItem(storageKeys.pendingSession)
           setStep(4)
           setCheckoutStatus('')
           return
@@ -1285,25 +1213,22 @@ export default function ClientOnboarding() {
 
         const ownerSigDataUrl = await toDataUrl(SAVED_SIGNATURE_SRC)
 
-        await sendEmail({
-          clientName: proposalName,
-          retainer: session.retainer,
+        const finalization = await postClientStatusUpdate({
+          clientId,
+          sessionId,
           proposalSignedAt,
           contractSignedAt,
-          paymentAmount: session.amountTotal,
           proposalSigImage,
           contractSigImage,
           ownerSigImage: ownerSigDataUrl,
-          planLabel: session.plan.shortLabel,
-          planDetail: session.plan.detail,
-          planCoverageLine: session.plan.coverage,
         })
 
         if (!active) return
 
-        window.localStorage.setItem(`${FINALIZED_SESSION_PREFIX}${sessionId}`, '1')
-        window.localStorage.removeItem(PENDING_SESSION_KEY)
-        setSignedData((current) => ({ ...current, retainer: session.retainer }))
+        const planValue = finalization.planValue || signedData.retainer || 'none'
+        window.localStorage.setItem(finalizedKey, '1')
+        window.localStorage.removeItem(storageKeys.pendingSession)
+        setSignedData((current) => ({ ...current, retainer: planValue }))
         setStep(4)
         setCheckoutStatus('')
       } catch (err) {
@@ -1314,21 +1239,28 @@ export default function ClientOnboarding() {
     }
 
     finalizeCheckout()
-
-    return () => {
-      active = false
-    }
-  }, [proposalName, proposalSignedAt, contractSignedAt, proposalSigImage, contractSigImage])
+    return () => { active = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proposalName, proposalSignedAt, contractSignedAt, proposalSigImage, contractSigImage, storageKeys.pendingSession, storageKeys.finalizedSessionPrefix])
 
   const printableData = {
     clientName: proposalName,
+    businessName: clientConfig.businessName,
+    businessLocation: clientConfig.businessLocation,
+    proposalCards,
+    contractSections,
+    pricingLineItems,
+    projectTotal,
     proposalSignedAt,
     contractSignedAt,
     proposalSigImage,
     contractSigImage,
     ownerSigImage,
-    plan: getPlan(signedData.retainer),
+    plan: findPlanOption(planOptions, signedData.retainer),
+    satisfactionGuaranteeMonths,
   }
+
+  const headerClientName = proposalName || clientConfig.clientName || ''
 
   return (
     <>
@@ -1355,7 +1287,13 @@ export default function ClientOnboarding() {
 
         {step === 1 && (
           <ProposalStep
-            defaultName={proposalName}
+            clientName={headerClientName || clientConfig.clientName}
+            businessName={clientConfig.businessName}
+            proposalCards={proposalCards}
+            pricingLineItems={pricingLineItems}
+            projectTotal={projectTotal}
+            satisfactionGuaranteeMonths={satisfactionGuaranteeMonths}
+            defaultName={initialName}
             previewSignatureImage={proposalSigImage}
             onSigned={(name, signatureImage) => {
               setProposalName(name)
@@ -1368,12 +1306,16 @@ export default function ClientOnboarding() {
 
         {step === 2 && (
           <AgreementStep
+            clientName={headerClientName || clientConfig.clientName}
+            businessName={clientConfig.businessName}
+            contractSections={contractSections}
+            planOptions={planOptions}
             proposalName={proposalName}
             initialPlan={signedData.retainer}
             previewSignatureImage={proposalSigImage}
             onContinue={(data) => {
-              setSignedData(data)
-              setContractSigImage(proposalSigImage)
+              setSignedData({ retainer: data.retainer })
+              setContractSigImage(data.contractSigImage)
               setContractSignedAt(timestamp())
               setStep(3)
             }}
@@ -1382,7 +1324,15 @@ export default function ClientOnboarding() {
 
         {step === 3 && (
           <PaymentStep
-            proposalName={proposalName}
+            clientId={clientId}
+            clientName={proposalName}
+            businessName={clientConfig.businessName}
+            planOptions={planOptions}
+            pricingLineItems={pricingLineItems}
+            monthlyStartIso={monthlyStartIso}
+            monthlyMaintenanceStart={monthlyMaintenanceStart}
+            annualMaintenanceEnd={annualMaintenanceEnd}
+            defaultCustomerEmail=""
             signedData={signedData}
             proposalSignedAt={proposalSignedAt}
             contractSignedAt={contractSignedAt}
@@ -1396,11 +1346,111 @@ export default function ClientOnboarding() {
         {step === 4 && (
           <ThankYouStep
             clientName={proposalName}
-            plan={getPlan(signedData.retainer)}
+            plan={findPlanOption(planOptions, signedData.retainer)}
             onPrint={() => openPrintableDocuments(printableData)}
           />
         )}
       </div>
+    </>
+  )
+}
+
+function readAdminKey() {
+  if (typeof window === 'undefined') return ''
+  try {
+    return window.sessionStorage.getItem('vivid-acuity-admin-key') || ''
+  } catch {
+    return ''
+  }
+}
+
+async function fetchClientConfig(clientId) {
+  const url = `/api/client-config?client=${encodeURIComponent(clientId)}`
+  let res = await fetch(url)
+  let data = await res.json().catch(() => ({}))
+
+  // Drafts are 423 unless we present an admin key. If the same browser session
+  // has the admin key from the /admin dashboard, retry as a preview.
+  if (res.status === 423) {
+    const adminKey = readAdminKey()
+    if (adminKey) {
+      res = await fetch(url, { headers: { 'x-admin-key': adminKey } })
+      data = await res.json().catch(() => ({}))
+    } else {
+      const err = new Error(data.error || 'This onboarding link is not yet active.')
+      err.notActive = true
+      throw err
+    }
+  }
+
+  if (!res.ok) throw new Error(data.error || `Failed to load client (${res.status}).`)
+  return data
+}
+
+export default function ClientOnboarding({ clientId }) {
+  const [state, setState] = useState({ status: 'loading', config: null, error: '', notActive: false })
+
+  useEffect(() => {
+    if (!clientId) {
+      setState({ status: 'error', config: null, error: 'No client identifier provided.', notActive: false })
+      return undefined
+    }
+
+    let active = true
+    setState({ status: 'loading', config: null, error: '', notActive: false })
+
+    fetchClientConfig(clientId)
+      .then((data) => {
+        if (active) setState({ status: 'ready', config: data, error: '', notActive: false })
+      })
+      .catch((err) => {
+        if (!active) return
+        setState({
+          status: 'error',
+          config: null,
+          error: err.message || 'Failed to load client.',
+          notActive: Boolean(err.notActive),
+        })
+      })
+
+    return () => { active = false }
+  }, [clientId])
+
+  if (state.status === 'loading') {
+    return <FullScreenStatus title="Loading your onboarding" message="One moment while we pull your proposal." />
+  }
+  if (state.status === 'error') {
+    if (state.notActive) {
+      return (
+        <FullScreenStatus
+          title="This link isn't active yet"
+          message="Your onboarding link will be activated as soon as our final review is complete. You'll receive an email when it's ready."
+        />
+      )
+    }
+    return <FullScreenStatus title="We could not load this onboarding link" message={state.error} isError />
+  }
+
+  return (
+    <>
+      {state.config?.isPreview && (
+        <div
+          style={{
+            background: '#eb6611',
+            color: '#fff',
+            padding: '8px 16px',
+            textAlign: 'center',
+            fontFamily: 'sans-serif',
+            fontSize: 12,
+            letterSpacing: '0.15em',
+            textTransform: 'uppercase',
+            fontWeight: 700,
+          }}
+        >
+          Admin Preview — Draft (not yet visible to client)
+        </div>
+      )}
+      <OnboardingApp clientId={clientId} clientConfig={state.config} />
     </>
   )
 }
